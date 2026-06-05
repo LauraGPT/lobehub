@@ -8,6 +8,7 @@ import { CreatePlanInspector } from './CreatePlan';
 import { CreateTodosInspector } from './CreateTodos';
 import { UpdatePlanInspector } from './UpdatePlan';
 import { UpdateTodosInspector } from './UpdateTodos';
+import { VentInspector } from './Vent';
 
 /**
  * Lobe Agent Inspector Components Registry
@@ -23,4 +24,5 @@ export const LobeAgentInspectors: Record<string, BuiltinInspector> = {
   [LobeAgentApiName.createTodos]: CreateTodosInspector as BuiltinInspector,
   [LobeAgentApiName.updatePlan]: UpdatePlanInspector as BuiltinInspector,
   [LobeAgentApiName.updateTodos]: UpdateTodosInspector as BuiltinInspector,
+  [LobeAgentApiName.vent]: VentInspector as BuiltinInspector,
 };
