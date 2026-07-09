@@ -12,6 +12,8 @@ LOBE_DEFAULT_MODEL_LIST.forEach((model) => {
 const lobeHubOnlineModelLocales = {
   'claude-sonnet-5.description':
     "Claude Sonnet 5 is Anthropic's most agentic Sonnet model, built for sustained coding, tool use, and long-context workflows with Sonnet-tier speed and efficiency.",
+  'dola-seedream-5-0-pro-260628.description':
+    'ByteDance Seedream 5.0 Pro by BytePlus is a high-precision image generation model with precise control over element positioning, supporting text-to-image and single-image editing at 2K resolution.',
   'dreamina-seedance-2-0-260128.description':
     'Seedance 2.0 by ByteDance is the most powerful video generation model, supporting multimodal reference video generation, video editing, video extension, text-to-video, and image-to-video with synchronized audio.',
   'dreamina-seedance-2-0-fast-260128.description':
