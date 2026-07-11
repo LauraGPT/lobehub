@@ -13,6 +13,8 @@ import { AgentDocumentsService } from '@/server/services/agentDocuments';
 
 import { OnboardingService } from './index';
 
+const AGENT_ONBOARDING_VERSION = 1;
+
 vi.mock('@/database/models/agent', () => ({
   AgentModel: vi.fn(),
 }));
@@ -319,7 +321,7 @@ describe('OnboardingService', () => {
       lastActiveAt: '2026-04-17T08:00:00.000Z',
       phase: 'agent_identity',
       startedAt: '2026-04-17T08:00:00.000Z',
-      version: CURRENT_ONBOARDING_VERSION,
+      version: AGENT_ONBOARDING_VERSION,
     });
   });
 
@@ -486,7 +488,7 @@ describe('OnboardingService', () => {
       lastActiveAt: '2026-04-17T08:00:00.000Z',
       phase: 'agent_identity',
       startedAt: '2026-04-17T08:00:00.000Z',
-      version: CURRENT_ONBOARDING_VERSION,
+      version: AGENT_ONBOARDING_VERSION,
     });
 
     mockAgentModel.getBuiltinAgent.mockResolvedValue({

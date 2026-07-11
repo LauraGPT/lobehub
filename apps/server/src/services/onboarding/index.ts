@@ -48,9 +48,10 @@ const STRUCTURED_FIELD_LABELS: Record<SaveUserQuestionField, string> = {
 
 const AGENT_MANAGEMENT_IDENTIFIER = 'lobe-agent-management';
 const GROUP_AGENT_BUILDER_IDENTIFIER = 'lobe-group-agent-builder';
+const AGENT_ONBOARDING_VERSION = 1;
 
 const defaultAgentOnboardingState = (): UserAgentOnboarding => ({
-  version: CURRENT_ONBOARDING_VERSION,
+  version: AGENT_ONBOARDING_VERSION,
 });
 
 const formatNaturalList = (items: string[]) => {
@@ -212,7 +213,7 @@ export class OnboardingService {
   };
 
   private ensureState = (state?: UserAgentOnboarding): UserAgentOnboarding => {
-    if (!state || (state.version ?? 0) < CURRENT_ONBOARDING_VERSION) {
+    if (!state || (state.version ?? 0) < AGENT_ONBOARDING_VERSION) {
       return defaultAgentOnboardingState();
     }
 
@@ -242,7 +243,7 @@ export class OnboardingService {
 
     return {
       ...nextState,
-      version: nextState.version ?? CURRENT_ONBOARDING_VERSION,
+      version: nextState.version ?? AGENT_ONBOARDING_VERSION,
     };
   };
 
@@ -339,7 +340,7 @@ export class OnboardingService {
       phase,
       startedAt: existing?.startedAt ?? now,
       userIdentityCompletedAt: existing?.userIdentityCompletedAt,
-      version: CURRENT_ONBOARDING_VERSION,
+      version: AGENT_ONBOARDING_VERSION,
     };
 
     if (existing?.agentMarketplacePick) {
@@ -519,8 +520,7 @@ export class OnboardingService {
       };
     } else {
       let discoveryContext:
-        | { currentUserMessageCount: number; startUserMessageCount: number }
-        | undefined;
+        { currentUserMessageCount: number; startUserMessageCount: number } | undefined;
 
       if (topicId) {
         const pastPreDiscovery =
@@ -653,8 +653,7 @@ export class OnboardingService {
 
     let currentUserMessageCount: number | undefined;
     let discoveryContext:
-      | { currentUserMessageCount: number; startUserMessageCount: number }
-      | undefined;
+      { currentUserMessageCount: number; startUserMessageCount: number } | undefined;
 
     // Build discovery context if we have a topic and are past agent_identity + user_identity
     if (topicId) {
@@ -884,7 +883,7 @@ export class OnboardingService {
       agentOnboarding: {
         ...state,
         finishedAt,
-        version: CURRENT_ONBOARDING_VERSION,
+        version: AGENT_ONBOARDING_VERSION,
       },
       onboarding: {
         currentStep: MAX_ONBOARDING_STEPS,
