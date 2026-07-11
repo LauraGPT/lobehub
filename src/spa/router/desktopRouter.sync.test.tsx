@@ -20,8 +20,6 @@ const KNOWN_DIVERGENCES: Record<string, string> = {
  */
 const WEB_ONLY_PATHS = new Set([
   '/onboarding',
-  '/onboarding/agent',
-  '/onboarding/classic',
   // Verify report workspace + messenger link flow — web/CLI only
   '/verify',
   '/verify-im',
