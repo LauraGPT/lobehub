@@ -791,6 +791,7 @@ export const onboardingKeys = {
   ]),
   analysisStatus: def('onboarding:analysisStatus', () => ['onboarding:analysisStatus']),
   profile: def('onboarding:profile', () => ['onboarding:profile']),
+  suggestedTasks: def('onboarding:suggestedTasks', () => ['onboarding:suggestedTasks']),
 };
 
 // ---- agent home / profile / signal (kept off the `agent:` idb tier) -----
