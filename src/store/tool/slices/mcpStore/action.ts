@@ -5,9 +5,9 @@ import { type TRPCClientError } from '@trpc/client';
 import debug from 'debug';
 import { uniqBy } from 'es-toolkit/compat';
 import { produce } from 'immer';
-import { gt, valid } from 'semver';
 import { type SWRResponse } from 'swr';
 import useSWR from 'swr';
+import { isGreater, isValid } from 'verkit';
 
 import { type MCPErrorData } from '@/libs/mcp/types';
 import { parseStdioErrorMessage } from '@/libs/mcp/types';
@@ -513,8 +513,10 @@ export class PluginMCPStoreActionImpl {
 
         if (dataVersion && manifestVersion) {
           // If both versions exist, compare and take the larger value
-          if (valid(dataVersion) && valid(manifestVersion)) {
-            manifest.version = gt(dataVersion, manifestVersion) ? dataVersion : manifestVersion;
+          if (isValid(dataVersion) && isValid(manifestVersion)) {
+            manifest.version = isGreater(dataVersion, manifestVersion)
+              ? dataVersion
+              : manifestVersion;
           } else {
             // If version format is incorrect, prioritize dataVersion
             manifest.version = dataVersion;

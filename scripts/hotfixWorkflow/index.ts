@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import { confirm, input } from '@inquirer/prompts';
 import { consola } from 'consola';
-import * as semver from 'semver';
+import { increment, tryParse } from 'verkit';
 
 const ROOT_DIR = process.cwd();
 const PACKAGE_JSON_PATH = path.join(ROOT_DIR, 'package.json');
@@ -38,7 +38,7 @@ function getCurrentVersion(): string {
 }
 
 function bumpPatchVersion(currentVersion: string): string {
-  const parsed = semver.parse(currentVersion);
+  const parsed = tryParse(currentVersion);
   if (!parsed) {
     consola.error(`❌ Invalid semver version in package.json: ${currentVersion}`);
     process.exit(1);
@@ -46,7 +46,7 @@ function bumpPatchVersion(currentVersion: string): string {
 
   // If current is a pre-release, hotfix should still be a stable patch (e.g. 2.0.0-beta.1 -> 2.0.1)
   const base = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
-  const next = semver.inc(base, 'patch');
+  const next = increment(base, 'patch');
   if (!next) {
     consola.error(`❌ Unable to calculate patch version from: ${base}`);
     process.exit(1);

@@ -1,4 +1,4 @@
-import semver from 'semver';
+import { tryParse } from 'verkit';
 
 const STATIC_ASSET_PATH_PREFIXES = ['/assets/', '/_next/', '/static/'];
 const ROOT_STATIC_FILE_RE = /^\/[^/]+\.[^/]+$/;
@@ -21,8 +21,8 @@ export const shouldUpdateApp = (currentVersion: string, nextVersion: string): bo
 
   try {
     // Parse version number
-    const current = semver.parse(currentVersion);
-    const next = semver.parse(nextVersion);
+    const current = tryParse(currentVersion);
+    const next = tryParse(nextVersion);
 
     if (!current || !next) return true;
 

@@ -1,8 +1,8 @@
 import dayjs from 'dayjs';
 import { template } from 'es-toolkit/compat';
 import matter from 'gray-matter';
-import semver from 'semver';
 import urlJoin from 'url-join';
+import { compareReversed, isGreater, isLess, normalize } from 'verkit';
 
 import { FetchCacheTag } from '@/const/cacheControl';
 import { type Locales } from '@/locales/resources';
@@ -168,7 +168,7 @@ export class ChangelogService {
         date: dayjs(item.date).format('YYYY-MM-DD'),
         versionRange: this.formatVersionRange(item.versionRange),
       }))
-      .sort((a, b) => semver.rcompare(a.versionRange[0], b.versionRange[0]));
+      .sort((a, b) => compareReversed(a.versionRange[0], b.versionRange[0]));
   }
 
   private formatVersionRange(range: string[]): string[] {
@@ -176,10 +176,10 @@ export class ChangelogService {
       return range;
     }
 
-    const [v1, v2]: any = range.map((v) => semver.parse(v)?.toString());
+    const [v1, v2] = range.map((version) => normalize(version) ?? version);
 
-    const minVersion = semver.lt(v1, v2) ? v1 : v2;
-    const maxVersion = semver.gt(v1, v2) ? v1 : v2;
+    const minVersion = isLess(v1, v2) ? v1 : v2;
+    const maxVersion = isGreater(v1, v2) ? v1 : v2;
 
     return [minVersion, maxVersion];
   }

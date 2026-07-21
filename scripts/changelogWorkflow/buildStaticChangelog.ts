@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { consola } from 'consola';
 import { readJsonSync, writeJSONSync } from 'fs-extra';
-import semver from 'semver';
+import { clean, compare } from 'verkit';
 
 import { markdownToTxt } from '@/utils/markdownToTxt';
 
@@ -24,7 +24,7 @@ class BuildStaticChangelog {
   };
 
   private cleanVersion = (version: string): string => {
-    return semver.clean(version) || version;
+    return clean(version) || version;
   };
 
   private formatCategory = (category: string): string => {
@@ -57,7 +57,7 @@ class BuildStaticChangelog {
 
       const entry: ChangelogStaticItem = {
         children: {},
-        date: date,
+        date,
         version: this.cleanVersion(versionNumber),
       };
 
@@ -100,8 +100,7 @@ class BuildStaticChangelog {
       );
       if (existingIndex === -1) {
         const insertIndex = mergedVersions.findIndex(
-          (v) =>
-            semver.compare(this.cleanVersion(newVersion.version), this.cleanVersion(v.version)) > 0,
+          (v) => compare(this.cleanVersion(newVersion.version), this.cleanVersion(v.version)) > 0,
         );
         if (insertIndex === -1) {
           mergedVersions.push(newVersion);

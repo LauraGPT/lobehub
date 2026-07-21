@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 
 import type { Command } from 'commander';
 import pc from 'picocolors';
-import semver from 'semver';
+import { coerce, isGreater, tryParse } from 'verkit';
 
 // Pull package metadata from the shared `src/pkg.ts` module (resolved at the
 // bundled entry's depth) rather than a local `require('../../package.json')`,
@@ -70,17 +70,16 @@ export function buildInstallCommand(
 }
 
 /**
- * Whether `latest` is a newer version than `current`. Delegates to `semver` so
+ * Whether `latest` is a newer version than `current`. Delegates to `verkit` so
  * prerelease identifiers order correctly (e.g. `1.0.0-beta.10` > `1.0.0-beta.9`,
  * which a lexicographic compare gets wrong). Tolerates a leading `v` and missing
  * segments via coercion; an unparseable `latest` is treated as "not newer".
  */
 export function isNewerVersion(latest: string, current: string): boolean {
-  const latestParsed = semver.coerce(latest, { includePrerelease: true }) ?? semver.parse(latest);
-  const currentParsed =
-    semver.coerce(current, { includePrerelease: true }) ?? semver.parse(current);
+  const latestParsed = coerce(latest, { includePrerelease: true }) ?? tryParse(latest);
+  const currentParsed = coerce(current, { includePrerelease: true }) ?? tryParse(current);
   if (!latestParsed || !currentParsed) return false;
-  return semver.gt(latestParsed, currentParsed);
+  return isGreater(latestParsed, currentParsed);
 }
 
 async function fetchLatestVersion(name: string, tag: string): Promise<string> {

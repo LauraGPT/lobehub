@@ -90,13 +90,21 @@ jobs:
           echo "Current version: ${CURRENT_VERSION}"
 
           # Coerce to stable base (e.g. 2.0.0-beta.1 -> 2.0.0), then bump patch (-> 2.0.1)
-          BASE_VERSION="$(npx -y semver@7 "${CURRENT_VERSION}" -c)"
+          BASE_VERSION="$(VERSION_INPUT="${CURRENT_VERSION}" node --input-type=module -e "
+            import { coerce } from 'verkit';
+            const version = coerce(process.env.VERSION_INPUT);
+            if (version) process.stdout.write(version);
+          ")"
           if [ -z "${BASE_VERSION}" ]; then
             echo "❌ Invalid version in package.json: ${CURRENT_VERSION}"
             exit 1
           fi
 
-          NEXT_VERSION="$(npx -y semver@7 -i patch "${BASE_VERSION}")"
+          NEXT_VERSION="$(VERSION_INPUT="${BASE_VERSION}" node --input-type=module -e "
+            import { increment } from 'verkit';
+            const version = increment(process.env.VERSION_INPUT, 'patch');
+            if (version) process.stdout.write(version);
+          ")"
           echo "📦 Patch version: ${NEXT_VERSION}"
           echo "version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -134,7 +142,10 @@ jobs:
           echo "📝 Bumping package.json version to: $VERSION"
 
           # Validate VERSION is strict semver before writing
-          if ! npx -y semver@7 "$VERSION" >/dev/null 2>&1; then
+          if ! VERSION_INPUT="$VERSION" node --input-type=module -e "
+            import { isValid } from 'verkit';
+            process.exit(isValid(process.env.VERSION_INPUT) ? 0 : 1);
+          "; then
             echo "❌ Invalid semver version: $VERSION"
             exit 1
           fi

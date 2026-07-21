@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { confirm, select } from '@inquirer/prompts';
 import { consola } from 'consola';
-import * as semver from 'semver';
+import { increment } from 'verkit';
 
 const ROOT_DIR = process.cwd();
 const PACKAGE_JSON_PATH = path.join(ROOT_DIR, 'package.json');
@@ -35,7 +35,7 @@ function getCurrentVersion(): string {
 
 // Calculate new version based on type
 function bumpVersion(currentVersion: string, type: VersionType): string {
-  const newVersion = semver.inc(currentVersion, type);
+  const newVersion = increment(currentVersion, type);
   if (!newVersion) {
     consola.error(`❌ Unable to calculate new version (current: ${currentVersion}, type: ${type})`);
     process.exit(1);

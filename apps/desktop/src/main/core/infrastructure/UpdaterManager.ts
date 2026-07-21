@@ -8,7 +8,7 @@ import type {
 import { app as electronApp } from 'electron';
 import log from 'electron-log';
 import { autoUpdater } from 'electron-updater';
-import semver from 'semver';
+import { isGreater } from 'verkit';
 
 import { isDev, isWindows } from '@/const/env';
 import { getDesktopEnv } from '@/env';
@@ -546,7 +546,7 @@ export class UpdaterManager {
   private maybeClearInstallLaterGuard(incomingVersion: string | undefined) {
     if (!this.installLaterVersion || !incomingVersion) return;
     try {
-      if (semver.gt(incomingVersion, this.installLaterVersion)) {
+      if (isGreater(incomingVersion, this.installLaterVersion)) {
         logger.info(
           `Clearing install-later guard (was v${this.installLaterVersion}, incoming v${incomingVersion})`,
         );

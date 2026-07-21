@@ -1,7 +1,7 @@
 import { AGENT_CHAT_TOPIC_URL, GROUP_CHAT_TOPIC_URL } from '@lobechat/const';
 import isEqual from 'fast-deep-equal';
-import { gt, parse, valid } from 'semver';
 import type { SWRResponse } from 'swr';
+import { isGreater, tryParse } from 'verkit';
 
 import { getActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { getActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspaceSlug';
@@ -220,17 +220,15 @@ export class GlobalGeneralActionImpl {
       {
         focusThrottleInterval: 1000 * 60 * 30,
         onSuccess: (data: string) => {
-          if (!valid(CURRENT_VERSION) || !valid(data)) return;
-
-          const currentVersion = parse(CURRENT_VERSION);
-          const latestVersion = parse(data);
+          const currentVersion = tryParse(CURRENT_VERSION);
+          const latestVersion = tryParse(data);
 
           if (!currentVersion || !latestVersion) return;
 
           const currentMajorMinor = `${currentVersion.major}.${currentVersion.minor}.0`;
           const latestMajorMinor = `${latestVersion.major}.${latestVersion.minor}.0`;
 
-          if (gt(latestMajorMinor, currentMajorMinor)) {
+          if (isGreater(latestMajorMinor, currentMajorMinor)) {
             this.#set({ hasNewVersion: true, latestVersion: data }, false, n('checkLatestVersion'));
           }
         },
@@ -255,10 +253,8 @@ export class GlobalGeneralActionImpl {
 
           this.#set({ serverVersion: data }, false);
 
-          if (!valid(CURRENT_VERSION) || !valid(data)) return;
-
-          const clientVersion = parse(CURRENT_VERSION);
-          const serverVersion = parse(data);
+          const clientVersion = tryParse(CURRENT_VERSION);
+          const serverVersion = tryParse(data);
 
           if (!clientVersion || !serverVersion) return;
 

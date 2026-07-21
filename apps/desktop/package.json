@@ -73,7 +73,6 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@t3-oss/env-core": "^0.13.11",
     "@types/resolve": "^1.20.6",
-    "@types/semver": "^7.7.1",
     "@types/set-cookie-parser": "^2.4.10",
     "@typescript/native-preview": "7.0.0-dev.20260630.1",
     "@vanilla-extract/css": "^1.21.1",
@@ -105,7 +104,6 @@
     "prettier": "^3.9.4",
     "remark-cli": "^12.0.1",
     "resolve": "^1.22.12",
-    "semver": "^7.8.5",
     "set-cookie-parser": "^2.7.2",
     "strip-ansi": "6.0.1",
     "stylelint": "^15.11.0",
@@ -114,6 +112,7 @@
     "typescript": "^6.0.3",
     "undici": "^7.28.0",
     "uuid": "^14.0.1",
+    "verkit": "^0.1.2",
     "vite": "8.0.14",
     "vitest": "3.2.6",
     "zod": "^4.4.3"

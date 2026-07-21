@@ -24,17 +24,6 @@ vi.mock('@/utils/markdownToTxt', () => ({
   markdownToTxt: vi.fn().mockImplementation((text: string) => text),
 }));
 
-vi.mock('semver', async (importOriginal) => {
-  const actual: any = await importOriginal();
-  return {
-    ...actual,
-    rcompare: vi.fn().mockImplementation((a, b) => b.localeCompare(a)),
-    lt: vi.fn().mockImplementation((a, b) => a < b),
-    gt: vi.fn().mockImplementation((a, b) => a > b),
-    parse: vi.fn().mockImplementation((v) => ({ toString: () => v })),
-  };
-});
-
 // 模拟 process.env
 const originalEnv = process.env;
 
