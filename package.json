@@ -451,7 +451,7 @@
     "url-join": "^5.0.0",
     "use-merge-value": "^1.2.0",
     "uuid": "^14.0.1",
-    "verkit": "^0.1.2",
+    "verkit": "^0.2.0",
     "virtua": "^0.48.8",
     "word-extractor": "^1.0.4",
     "ws": "^8.21.0",
