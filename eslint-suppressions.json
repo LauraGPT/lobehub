@@ -1379,37 +1379,7 @@
       "count": 1
     }
   },
-  "src/routes/onboarding/features/AgentPickerStep/index.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/onboarding/features/FullNameStep.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/onboarding/features/InterestsStep.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/routes/onboarding/features/ModeSelectionStep.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/onboarding/features/ProSettingsStep.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/onboarding/features/ResponseLanguageStep.tsx": {
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/routes/onboarding/features/TelemetryStep.tsx": {
     "no-restricted-imports": {
       "count": 1
     }
