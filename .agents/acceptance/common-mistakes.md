@@ -129,3 +129,23 @@ activity into their real browsing context, and erodes trust in automated runs.
 report auth as ❌ Blocked and request ONE manual sign-in. The corrected policy
 lives in `references/auth.md` ("When the instance comes up signed out") and
 PROJECT.md §4 Electron.
+
+---
+
+## Case 27 — Declaring a parent-chain persistence fix complete without product UI evidence
+
+**Wrong approach**: verify a message-chain fix only with reducer/model tests and publish a
+text-only Acceptance round, even though the reported failure was a user message disappearing from
+the conversation UI.
+
+**Why it's wrong**: unit and database tests prove the two guards independently, but they do not
+prove that the real conversation renderer selects the repaired branch or that a newly sent user
+message remains visible after hydration.
+
+**What it breaks**: the user cannot inspect the exact product symptom they reported and must ask
+for another verification round before trusting the fix.
+
+**Correct approach**: distill the original heterogeneous-agent trace into a deterministic fixture,
+exercise the real product surface with the stale empty assistant present, and require paired
+evidence: a screenshot/GIF showing the new user turn still visible plus a DB assertion showing its
+`parent_id` points to the valid spine rather than the empty shell.
