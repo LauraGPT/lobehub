@@ -43,6 +43,7 @@ export const WORKSPACE_SETTINGS_TABS: ReadonlySet<string> = new Set([
   'general',
   'members',
   'messenger',
+  'notification',
   'oauth-apps',
   'plans',
   'provider',

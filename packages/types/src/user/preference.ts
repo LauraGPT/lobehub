@@ -8,6 +8,7 @@ import type { TopicGroupMode, TopicSortBy } from '../topic';
 import type { UserAgentOnboarding } from './agentOnboarding';
 import type { UserOnboarding } from './onboarding';
 import type { UserSettings } from './settings';
+import type { NotificationSettings } from './settings/notification';
 
 /**
  * Per-agent override for the device execution decision. Stored on
@@ -49,6 +50,14 @@ export interface WorkspaceUserPreference {
   agentDeviceOverrides?: Record<string /* agentId */, AgentDeviceOverride>;
   /** Personal model choices for workspace agents that allow member selection. */
   agentModelOverrides?: Record<string /* agentId */, AgentModelOverride>;
+  /**
+   * This member's notification preferences for workspace-scoped scenarios
+   * (the `workspace` category of the scenario registry). Same shape as the
+   * personal `user_settings.notification` bag; missing = every workspace
+   * notification enabled. Workspace notifications consult only this bag —
+   * personal notification settings no longer apply to them.
+   */
+  notification?: NotificationSettings;
 }
 
 export interface LobeUser {
