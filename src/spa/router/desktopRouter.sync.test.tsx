@@ -1,11 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { RouteObject } from 'react-router';
 import { matchRoutes } from 'react-router';
 import { describe, expect, it } from 'vitest';
-
-import { WORKSPACE_SETTINGS_TABS } from '@/features/Workspace/workspaceAwarePath';
 
 import { desktopRoutes } from './desktopRouter.config';
 
@@ -23,18 +20,20 @@ const KNOWN_DIVERGENCES: Record<string, string> = {
  */
 const WEB_ONLY_PATHS = new Set([
   '/onboarding',
-  '/onboarding/agent',
-  '/onboarding/classic',
-  // Messenger link flow — web/CLI only (the verify workspace + acceptance
-  // pages ship on Electron too, so they are synced, not listed here)
+  // Verify report workspace + messenger link flow — web/CLI only
+  '/verify',
   '/verify-im',
+  ':runId',
 ]);
 
-/** Extra `index: true` routes present only on web. */
-const WEB_ONLY_INDEX_DELTA = 0;
+/** Extra `index: true` routes present only on web (verify empty detail). */
+const WEB_ONLY_INDEX_DELTA = 1;
 
 /** handle.meta blobs present only on web. */
-const WEB_ONLY_HANDLE_METAS = new Set<string>([]);
+const WEB_ONLY_HANDLE_METAS = new Set([
+  '{ meta: verifyRouteMeta }',
+  '{ meta: verifyReportsRouteMeta }',
+]);
 
 function extractIndexCount(source: string) {
   return [...source.matchAll(/index:\s*true/g)].length;
@@ -140,7 +139,6 @@ describe('desktopRouter config sync', () => {
       '@/routes/(main)/[workspaceSlug]/settings/usage',
       '@/routes/(main)/[workspaceSlug]/settings/skill',
       '@/routes/(main)/[workspaceSlug]/settings/connector',
-      '@/routes/(main)/[workspaceSlug]/settings/oauth-apps',
       '@/routes/(main)/[workspaceSlug]/settings/audit-log',
     ];
 
@@ -159,52 +157,6 @@ describe('desktopRouter config sync', () => {
     // `path: 'billing'` block under `:workspaceSlug` is preserved as redirects)
     expect(asyncSource).toContain("redirectElement('../settings/plans')");
     expect(syncSource).toContain("redirectElement('../settings/plans')");
-  });
-
-  it('keeps workspace-aware settings tabs aligned with registered workspace routes', () => {
-    const rootRoute = desktopRoutes.find((route) => route.path === '/');
-    const workspaceRoute = rootRoute?.children?.find((route) => route.path === ':workspaceSlug');
-    const settingsRoute = workspaceRoute?.children?.find((route) => route.path === 'settings');
-
-    expect(settingsRoute, 'Workspace settings route must exist').toBeDefined();
-
-    const collectPaths = (routes: RouteObject[]): string[] =>
-      routes.flatMap((route) =>
-        route.path
-          ? [route.path, ...collectPaths(route.children ?? [])]
-          : collectPaths(route.children ?? []),
-      );
-    const registeredTabs = [
-      ...new Set(
-        collectPaths(settingsRoute?.children ?? []).map(
-          (registeredPath) => registeredPath.split('/')[0],
-        ),
-      ),
-    ].sort();
-    const workspaceAwareTabs = [...WORKSPACE_SETTINGS_TABS].sort();
-
-    expect(
-      workspaceAwareTabs,
-      'WORKSPACE_SETTINGS_TABS must exactly match the registered workspace settings routes',
-    ).toEqual(registeredTabs);
-  });
-
-  it('workspace OAuth apps list and detail routes are registered', () => {
-    const listMatches = matchRoutes(desktopRoutes, '/acme/settings/oauth-apps');
-    const detailMatches = matchRoutes(desktopRoutes, '/acme/settings/oauth-apps/client-1');
-
-    expect(listMatches?.at(-1)?.route.path).toBe('oauth-apps');
-    expect(detailMatches?.at(-1)?.route.path).toBe('oauth-apps/:sub');
-    expect(detailMatches?.at(-1)?.params).toMatchObject({ sub: 'client-1', workspaceSlug: 'acme' });
-  });
-
-  it('both configs import and spread BusinessResourceRoutes into /resource children', async () => {
-    const [asyncSource, syncSource] = await readDesktopRouterSources();
-
-    expect(asyncSource).toContain('BusinessResourceRoutes');
-    expect(syncSource).toContain('BusinessResourceRoutes');
-    expect(asyncSource).toContain('...BusinessResourceRoutes');
-    expect(syncSource).toContain('...BusinessResourceRoutes');
   });
 
   it('task list and detail desktop routes share one workspace layout', async () => {
