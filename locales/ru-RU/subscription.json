@@ -43,7 +43,7 @@
   "cancelPlan.billingRecovery.alert": "Эта подписка и ее неоплаченный счет за продление будут немедленно отменены.",
   "cancelPlan.billingRecovery.confirm": "Отменить сейчас",
   "cancelPlan.billingRecovery.confirmCountdown": "Отменить сейчас ({{seconds}})",
-  "cancelPlan.billingRecovery.desc": "Срок действия этой подписки истек. Отмена вступает в силу немедленно и не может быть восстановлена.",
+  "cancelPlan.billingRecovery.desc": "Оплата по этой подписке просрочена. Отмена вступит в силу немедленно, и подписку нельзя будет восстановить.",
   "cancelPlan.confirmCountdown": "Отменить подписку ({{seconds}})",
   "cancelPlan.desc": "После отмены вы будете переведены на бесплатную версию по окончании текущего плана.",
   "cancelPlan.keep": "Сохранить подписку",
