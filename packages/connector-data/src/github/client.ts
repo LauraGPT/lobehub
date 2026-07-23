@@ -55,9 +55,6 @@ export const createGitHubConnectorClient = ({
     listRecentPullRequests: async () => (await getRepositories()).pulls,
     listRecentRepositories: async () => (await getRepositories()).recent,
     listRepositoryContributors: (repository) => loadRepositoryContributors(transport, repository),
-    listUserOrganizations: async () => {
-      const { viewer } = await getProfileBundle();
-      return loadOrganizations(transport, viewer.login);
-    },
+    listUserOrganizations: () => loadOrganizations(transport),
   };
 };

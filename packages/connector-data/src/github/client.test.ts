@@ -301,7 +301,6 @@ describe('createGitHubConnectorClient', () => {
     ]);
     expect(listUserOrganizations).toHaveBeenCalledWith({
       perPage: 20,
-      username: 'octocat',
     });
   });
 
@@ -323,7 +322,9 @@ describe('createGitHubConnectorClient', () => {
       const data =
         typeof body === 'object' && body && 'query' in body
           ? { data: profileResult }
-          : { id: 1, login: 'octocat' };
+          : request.url.endsWith('/user/orgs?per_page=20')
+            ? [{ description: 'Making AI accessible.', login: 'lobehub' }]
+            : { id: 1, login: 'octocat' };
       return new Response(JSON.stringify(data), {
         headers: { 'content-type': 'application/json' },
         status: 200,
@@ -341,5 +342,12 @@ describe('createGitHubConnectorClient', () => {
       'https://api.github.com/graphql',
       'https://api.github.com/user',
     ]);
+
+    await expect(client.listUserOrganizations()).resolves.toEqual([
+      { description: 'Making AI accessible.', login: 'lobehub' },
+    ]);
+    expect(fetch.mock.calls.map(([input, init]) => new Request(input, init).url)).toContain(
+      'https://api.github.com/user/orgs?per_page=20',
+    );
   });
 });

@@ -29,7 +29,6 @@ export interface GitHubConnectorTransport {
   }) => Promise<Array<{ contributions?: number; login?: string | null }>>;
   listUserOrganizations: (input: {
     perPage: number;
-    username: string;
   }) => Promise<Array<{ description?: string | null; login?: string | null }>>;
   request: <Variables extends Record<string, unknown>>(
     input: GitHubGraphQLRequest<Variables>,
@@ -178,10 +177,9 @@ export const createOctokitTransport = (accessToken: string): GitHubConnectorTran
         login,
       }));
     },
-    listUserOrganizations: async ({ perPage, username }) => {
-      const response = await octokit.rest.orgs.listForUser({
+    listUserOrganizations: async ({ perPage }) => {
+      const response = await octokit.rest.orgs.listForAuthenticatedUser({
         per_page: perPage,
-        username,
       });
       return response.data.map(({ description, login }) => ({ description, login }));
     },

@@ -109,10 +109,9 @@ export const loadUserProfile = async (
 
 export const loadOrganizations = async (
   transport: GitHubConnectorTransport,
-  username: string,
 ): Promise<GitHubOrganization[]> => {
   const organizations = await withConnectorRetry(
-    () => transport.listUserOrganizations({ perPage: 20, username }),
+    () => transport.listUserOrganizations({ perPage: 20 }),
     {
       code: 'github_request_failed',
       operation: 'listUserOrganizations',
