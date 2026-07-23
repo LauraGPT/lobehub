@@ -1753,9 +1753,9 @@ describe('ConversationLifecycle actions', () => {
 
         expect(sendMessageInServerSpy).toHaveBeenCalledWith(
           expect.objectContaining({
-            newAssistantMessage: {
+            newAssistantMessage: expect.objectContaining({
               provider: 'codex',
-            },
+            }),
           }),
           expect.any(AbortController),
         );
@@ -2319,7 +2319,7 @@ describe('ConversationLifecycle actions', () => {
       it('should directly call a single leading @agent in non-group chat', async () => {
         const { result } = renderHook(() => useChatStore());
         const targetAgentId = 'agent-direct-target';
-        const toolMessageId = 'tool-call-agent-result';
+        const toolMessageId = 'unused-tool-call-agent-result';
         const message = '@Agent B hello';
         const createdThreadId = 'thread-created-by-send';
 
@@ -2387,36 +2387,14 @@ describe('ConversationLifecycle actions', () => {
           });
         });
 
-        expect(agentService.getAgentConfigById).toHaveBeenCalledWith(targetAgentId);
-        expect(messageService.updateMessage).toHaveBeenCalledWith(
-          TEST_IDS.ASSISTANT_MESSAGE_ID,
-          expect.objectContaining({
-            content: '',
-            tools: [
-              expect.objectContaining({
-                apiName: 'callAgent',
-                identifier: 'lobe-agent-management',
-              }),
-            ],
-          }),
-          expect.objectContaining({ agentId: TEST_IDS.SESSION_ID }),
-        );
-        expect(messageService.createMessage).toHaveBeenCalledWith(
+        expect(messageService.updateMessage).not.toHaveBeenCalled();
+        expect(messageService.createMessage).not.toHaveBeenCalled();
+        expect(aiChatService.sendMessageInServer).toHaveBeenCalledWith(
           expect.objectContaining({
             agentId: TEST_IDS.SESSION_ID,
-            content: `Called agent "${targetAgentId}" to respond.`,
-            parentId: TEST_IDS.ASSISTANT_MESSAGE_ID,
-            plugin: expect.objectContaining({
-              apiName: 'callAgent',
-              identifier: 'lobe-agent-management',
-            }),
-            pluginState: {
-              agentId: targetAgentId,
-              instruction: message,
-              mode: 'speak',
-            },
-            role: 'tool',
+            newAssistantMessage: expect.objectContaining({ agentId: targetAgentId }),
           }),
+          expect.any(AbortController),
         );
 
         const execCall = (result.current.executeClientAgent as any).mock.calls[0]?.[0];
@@ -2428,26 +2406,20 @@ describe('ConversationLifecycle actions', () => {
               subAgentId: targetAgentId,
             }),
             inPortalThread: true,
-            parentMessageId: toolMessageId,
-            parentMessageType: 'tool',
+            parentMessageId: TEST_IDS.ASSISTANT_MESSAGE_ID,
+            parentMessageType: 'assistant',
+            skipCreateFirstMessage: true,
+            userMessageId: TEST_IDS.USER_MESSAGE_ID,
           }),
         );
         expect(execCall.initialContext).toBeUndefined();
-        expect(execCall.messages).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ id: toolMessageId, role: 'tool' }),
-            expect.objectContaining({
-              content: expect.stringContaining(message),
-              role: 'user',
-            }),
-          ]),
-        );
+        expect(execCall.messages).toEqual(expect.any(Array));
       });
 
       it('should route a single leading @agent through the gateway when gateway mode is enabled', async () => {
         const { result } = renderHook(() => useChatStore());
         const targetAgentId = 'agent-direct-target';
-        const toolMessageId = 'tool-call-agent-result';
+        const toolMessageId = 'unused-tool-call-agent-result';
         const message = '@Agent B hello';
 
         const userMessage = createMockMessage({
@@ -2462,9 +2434,7 @@ describe('ConversationLifecycle actions', () => {
           tools: [],
         });
 
-        // sendMessageInServer must still run: directMention deliberately uses the
-        // client message-persistence path even under gateway mode (the supervisor
-        // is a pure router and never executes an LLM turn on the gateway).
+        // A direct mention runs the target on the gateway, which owns persistence.
         const sendMessageInServerSpy = vi
           .spyOn(aiChatService, 'sendMessageInServer')
           .mockResolvedValue({
@@ -2523,22 +2493,9 @@ describe('ConversationLifecycle actions', () => {
           });
         });
 
-        // Messages were persisted client-side (we did NOT take the supervisor
-        // gateway early-return, which skips sendMessageInServer entirely).
-        expect(sendMessageInServerSpy).toHaveBeenCalled();
-        // The callAgent tool call was still emitted on the supervisor message.
-        expect(messageService.updateMessage).toHaveBeenCalledWith(
-          TEST_IDS.ASSISTANT_MESSAGE_ID,
-          expect.objectContaining({
-            tools: [
-              expect.objectContaining({
-                apiName: 'callAgent',
-                identifier: 'lobe-agent-management',
-              }),
-            ],
-          }),
-          expect.objectContaining({ agentId: TEST_IDS.SESSION_ID }),
-        );
+        expect(sendMessageInServerSpy).not.toHaveBeenCalled();
+        expect(messageService.updateMessage).not.toHaveBeenCalled();
+        expect(messageService.createMessage).not.toHaveBeenCalled();
         // The TARGET agent runs on the gateway, not the client.
         expect(result.current.executeClientAgent).not.toHaveBeenCalled();
         expect(executeGatewayAgentSpy).toHaveBeenCalledWith(
@@ -2549,6 +2506,7 @@ describe('ConversationLifecycle actions', () => {
               subAgentId: targetAgentId,
             }),
             message,
+            messageContext: expect.objectContaining({ agentId: TEST_IDS.SESSION_ID }),
           }),
         );
       });
@@ -2671,8 +2629,8 @@ describe('ConversationLifecycle actions', () => {
           });
         });
 
-        // Multi-mention keeps the supervisor on the gateway (unlike single-mention,
-        // which falls through to the client path). The mentioned agents are
+        // Multi-mention keeps the supervisor on the gateway; single-mention runs
+        // the target directly. The mentioned agents are
         // forwarded so the server enables callAgent + injects the delegation context.
         expect(result.current.executeClientAgent).not.toHaveBeenCalled();
         expect(executeGatewayAgentSpy).toHaveBeenCalledWith(

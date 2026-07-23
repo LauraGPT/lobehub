@@ -172,3 +172,9 @@ the visible flat list when its `agentId` differs from its parent assistant's
 `agentId`. Continue traversal through it so the target assistant reply remains
 an independent visible message. Cover the inverse case so same-Agent follow-up
 user turns remain visible.
+
+**Correction**: agent-id mismatch alone is not a safe envelope signal. A real
+user follow-up after a direct cross-agent reply has the same shape. Only apply
+the display fallback when the parent assistant contains the matching
+`lobe-agent-management.callAgent` tool; single explicit mentions should instead
+be routed directly and never create an envelope in the first place.

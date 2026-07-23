@@ -175,6 +175,42 @@ describe('FlatListBuilder', () => {
       expect(result.map((message) => message.id)).toEqual(['user-1', 'assistant-1', 'user-2']);
     });
 
+    it('should keep a user follow-up after a direct cross-agent reply visible', () => {
+      const messages: Message[] = [
+        {
+          agentId: 'conversation-owner',
+          content: '@Target first question',
+          createdAt: 0,
+          id: 'user-1',
+          role: 'user',
+          updatedAt: 0,
+        },
+        {
+          agentId: 'target-agent',
+          content: 'Direct answer',
+          createdAt: 1,
+          id: 'assistant-1',
+          parentId: 'user-1',
+          role: 'assistant',
+          updatedAt: 1,
+        },
+        {
+          agentId: 'conversation-owner',
+          content: 'Follow-up question',
+          createdAt: 2,
+          id: 'user-2',
+          parentId: 'assistant-1',
+          role: 'user',
+          updatedAt: 2,
+        },
+      ];
+
+      const builder = createBuilder(messages);
+      const result = builder.flatten(messages);
+
+      expect(result.map((message) => message.id)).toEqual(['user-1', 'assistant-1', 'user-2']);
+    });
+
     it('should create assistant group virtual message', () => {
       const messages: Message[] = [
         {

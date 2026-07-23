@@ -56,6 +56,8 @@ export interface SendMessageServerParams {
    */
   groupId?: string;
   newAssistantMessage: {
+    /** Agent that authored the assistant turn when it differs from the conversation owner. */
+    agentId?: string;
     /**
      * Message metadata (e.g., isSupervisor for group orchestration)
      */
@@ -134,6 +136,7 @@ export const AiSendMessageServerSchema = z.object({
   agentId: z.string().optional(),
   groupId: z.string().optional(),
   newAssistantMessage: z.object({
+    agentId: z.string().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
     model: z.string().optional(),
     provider: z.string().optional(),

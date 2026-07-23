@@ -197,6 +197,7 @@ const ExecAgentSchema = z
     /** Application context for message storage */
     appContext: z
       .object({
+        conversationAgentId: z.string().optional(),
         defaultTaskAssigneeAgentId: z.string().optional(),
         documentId: z.string().nullish(),
         /** The agent being edited when scope is 'agent_builder' (not the builder builtin itself). */

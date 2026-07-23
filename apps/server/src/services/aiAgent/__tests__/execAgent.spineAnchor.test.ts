@@ -234,6 +234,24 @@ describe('AiAgentService.execAgent - user turn spine anchoring', () => {
     });
   });
 
+  it('keeps the user on the conversation owner while attributing a direct reply to the executing agent', async () => {
+    await service.execAgent({
+      agentId: 'agent-1',
+      appContext: { conversationAgentId: 'conversation-owner', topicId: 'topic-1' },
+      prompt: '@Agent 1 hello',
+    });
+
+    expect(userMessageCall()![0]).toMatchObject({
+      agentId: 'conversation-owner',
+      role: 'user',
+    });
+    expect(assistantMessageCall()![0]).toMatchObject({
+      agentId: 'agent-1',
+      parentId: 'user-msg-1',
+      role: 'assistant',
+    });
+  });
+
   it('scopes the anchor lookup to the thread when one is active', async () => {
     mockGetLatestSpineMessageId.mockResolvedValue('thread-spine-1');
 

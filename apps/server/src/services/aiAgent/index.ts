@@ -1267,6 +1267,8 @@ export class AiAgentService {
     // fall back to the executing agent. Tools / systemRole / skills / agent
     // documents stay keyed on `resolvedAgentId`.
     const persistAgentId = appContext?.agentSignal?.agentId ?? resolvedAgentId;
+    const conversationAgentId = appContext?.conversationAgentId ?? persistAgentId;
+    const assistantAgentId = appContext?.conversationAgentId ? resolvedAgentId : persistAgentId;
 
     // Resolve the final model once, keeping per-call task / sub-agent overrides
     // above the caller's personal workspace choice and the shared Agent default.
@@ -1629,7 +1631,7 @@ export class AiAgentService {
 
       const fallbackTitleSource = markdownToTxt(prompt);
       const newTopic = await this.topicModel.create({
-        agentId: resolvedAgentId,
+        agentId: conversationAgentId,
         // Persist the group association when running inside a group conversation.
         // Without it the topic is created group-less and only shows under the
         // member agent's topic list — never in the group sidebar (which queries
@@ -1766,7 +1768,7 @@ export class AiAgentService {
     const userMessageRecord = runFromHistory
       ? undefined
       : await this.messageModel.create({
-          agentId: persistAgentId,
+          agentId: conversationAgentId,
           content: prompt,
           files: runAttachments.fileIds,
           // Group reads filter on messages.groupId (MessageModel.query group
@@ -1803,7 +1805,7 @@ export class AiAgentService {
     // seeding the agent's chat model would leak it into the model tag. A normal
     // run seeds model + provider as usual.
     const assistantMessageRecord = await this.messageModel.create({
-      agentId: persistAgentId,
+      agentId: assistantAgentId,
       content: LOADING_FLAT,
       // Stamp groupId so the assistant turn is visible in the group read path
       // (MessageModel.query filters group chats by messages.groupId).

@@ -187,6 +187,9 @@ export class FlatListBuilder {
       const isCrossAgentDispatchEnvelope =
         message.role === 'user' &&
         parentMessage?.role === 'assistant' &&
+        parentMessage.tools?.some(
+          (tool) => tool.identifier === 'lobe-agent-management' && tool.apiName === 'callAgent',
+        ) &&
         !!message.agentId &&
         !!parentMessage.agentId &&
         message.agentId !== parentMessage.agentId;
