@@ -31,24 +31,13 @@ export const useSyncWorkspaceSidebarPreference = (workspaceId: string | null) =>
     // before that, `serverSidebar` may be the previous workspace's value (or
     // an unfetched placeholder) and must not be pulled or cleared from.
     if (!workspaceId || loadedWorkspaceId !== workspaceId) return;
-    if (!serverSidebar) {
-      // Loaded and no saved sidebar preference: drop any layout left in the
-      // shared overlay bucket by a previously-visited workspace so this one
-      // renders its defaults.
-      useGlobalStore.getState().clearWorkspaceSidebarOverlay();
-      return;
-    }
-    const { status, updateSystemStatus } = useGlobalStore.getState();
-    const patch: { hiddenSidebarSections?: string[]; sidebarItems?: string[] } = {};
-    if (serverSidebar.items && !isEqual(status.workspace?.sidebarItems, serverSidebar.items))
-      patch.sidebarItems = serverSidebar.items;
-    if (
-      serverSidebar.hiddenSections &&
-      !isEqual(status.workspace?.hiddenSidebarSections, serverSidebar.hiddenSections)
-    )
-      patch.hiddenSidebarSections = serverSidebar.hiddenSections;
-    if (Object.keys(patch).length > 0)
-      updateSystemStatus(patch, 'syncWorkspaceSidebarPreference/pull');
+    // Replace wholesale: a field the server preference does not carry must be
+    // DELETED from the shared overlay bucket (not left behind by a deep
+    // merge), or the previous workspace's layout leaks into this one.
+    useGlobalStore.getState().setWorkspaceSidebarOverlay({
+      hiddenSidebarSections: serverSidebar?.hiddenSections,
+      sidebarItems: serverSidebar?.items,
+    });
   }, [workspaceId, serverSidebar, loadedWorkspaceId]);
 
   // Push: persist local overlay edits (and seed the server from a

@@ -58,6 +58,21 @@ describe('useSyncWorkspaceSidebarPreference', () => {
     expect(useGlobalStore.getState().status.workspace?.sidebarItems).toEqual(['agents']);
   });
 
+  it('deletes overlay fields the loaded server sidebar does not carry', () => {
+    // Workspace A left a custom item order; workspace B only hides sections.
+    setOverlay({ sidebarItems: ['agents'] });
+    useUserStore.setState({
+      workspaceUserPreference: { sidebar: { hiddenSections: ['recents'] } },
+      workspaceUserPreferenceWorkspaceId: 'ws-b',
+    });
+
+    renderHook(() => useSyncWorkspaceSidebarPreference('ws-b'));
+
+    const workspace = useGlobalStore.getState().status.workspace;
+    expect(workspace?.hiddenSidebarSections).toEqual(['recents']);
+    expect(workspace?.sidebarItems).toBeUndefined();
+  });
+
   it('pulls the loaded server sidebar layout onto the overlay', () => {
     setOverlay({ sidebarItems: ['agents'] });
     useUserStore.setState({

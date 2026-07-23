@@ -181,22 +181,33 @@ export class GlobalGeneralActionImpl {
     });
   };
 
-  clearWorkspaceSidebarOverlay = (): void => {
+  /**
+   * Replace the workspace overlay's sidebar-layout fields wholesale. An
+   * absent field is DELETED from the overlay (falling back to "untouched"
+   * defaults) — `updateSystemStatus` deep-merges and can neither delete keys
+   * nor drop a field the incoming server preference no longer carries.
+   */
+  setWorkspaceSidebarOverlay = (layout: {
+    hiddenSidebarSections?: string[];
+    sidebarItems?: string[];
+  }): void => {
     if (!this.#get().isStatusInit) return;
     const status = this.#get().status;
-    const workspace = status.workspace;
-    if (
-      !workspace ||
-      (workspace.sidebarItems === undefined && workspace.hiddenSidebarSections === undefined)
-    )
-      return;
-    // `updateSystemStatus` deep-merges, which cannot delete overlay keys —
-    // rebuild `workspace` without the sidebar-layout fields so the workspace
-    // falls back to defaults ("untouched" semantics) instead of keeping a
-    // previous workspace's layout.
-    const { hiddenSidebarSections: _hidden, sidebarItems: _items, ...rest } = workspace;
-    const nextStatus = { ...status, workspace: rest };
-    this.#set({ status: nextStatus }, false, n('clearWorkspaceSidebarOverlay'));
+    const {
+      hiddenSidebarSections: _hidden,
+      sidebarItems: _items,
+      ...rest
+    } = status.workspace ?? {};
+    const workspace = {
+      ...rest,
+      ...(layout.hiddenSidebarSections
+        ? { hiddenSidebarSections: layout.hiddenSidebarSections }
+        : {}),
+      ...(layout.sidebarItems ? { sidebarItems: layout.sidebarItems } : {}),
+    };
+    if (isEqual(status.workspace ?? {}, workspace)) return;
+    const nextStatus = { ...status, workspace };
+    this.#set({ status: nextStatus }, false, n('setWorkspaceSidebarOverlay'));
     this.#get().statusStorage.saveToLocalStorage(nextStatus);
   };
 
