@@ -17,4 +17,10 @@ describe('LobeFunASRAI', () => {
     expect(runtime.baseURL).toBe('http://localhost:8000/v1');
     expect(providerRuntimeMap.funasr).toBe(LobeFunASRAI);
   });
+
+  it('does not forward a constructor-supplied OpenAI key to FunASR', () => {
+    const runtime = new LobeFunASRAI({ apiKey: 'sk-openai-secret' });
+
+    expect(runtime.client.apiKey).toBe('funasr-local');
+  });
 });
