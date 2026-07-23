@@ -151,3 +151,24 @@ activity into their real browsing context, and erodes trust in automated runs.
 report auth as ❌ Blocked and request ONE manual sign-in. The corrected policy
 lives in `references/auth.md` ("When the instance comes up signed out") and
 PROJECT.md §4 Electron.
+
+### Publishing with `env -u` overrides stripped does NOT guarantee production — `~/.lobehub/settings.json` may pin a localhost serverUrl
+
+- **Wrong approach**: assuming the skill's publish recipe
+  (`env -u LOBEHUB_SERVER -u LOBE_API_KEY -u LOBEHUB_CLI_API_KEY -u LOBEHUB_CLI_HOME lh acceptance run ingest …`)
+  reaches production because all env overrides are cleared, and trusting a
+  clean-env `lh whoami` that returns the user's real profile as proof of prod.
+- **Why it fails**: `lh login` persists `serverUrl` into `~/.lobehub/settings.json`;
+  when the user last logged in against a local dev server, the clean env still
+  targets localhost. `whoami` is not a discriminator — the local dev DB carries the
+  user's synced real profile (same email, clerk avatar). The ingest "succeeds" but
+  the acceptance lands in the local DB and the `app.lobehub.com/acceptance/<id>`
+  link 404s for everyone.
+- **Correct approach**: discriminate the target with data, not identity — query an
+  object that only exists on one side (e.g. `lh acceptance view task:<id>`), or read
+  `~/.lobehub/settings.json` `serverUrl` directly. To publish without clobbering the
+  user's localhost login, log in to prod in an isolated home:
+  `LOBEHUB_CLI_HOME=$HOME/.lobehub-prod lh login --server https://app.lobehub.com`,
+  then run the ingest with `LOBEHUB_CLI_HOME=$HOME/.lobehub-prod` kept (only the
+  server/api-key vars stripped). Note the isolated home dir may stay empty
+  (credentials go to the OS keychain) — verify with a data probe, not `ls`.
