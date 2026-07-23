@@ -200,3 +200,23 @@ CLI spawn path. Verify with a multi-part response and timestamped DOM/store
 samples before any reload, then attach a GIF whose frames visibly progress and
 whose final frame contains the complete answer. Check persistence separately by
 refreshing only after the live-stream assertion has passed.
+
+## A text-only direct mention does not prove tool-call ownership
+
+**Wrong approach**: verify a leading single-Agent mention only with a plain-text
+response, then conclude that the direct-routing message tree is correct for all
+target-Agent runs.
+
+**Why it's wrong**: tool-capable runs add assistant tool-call chunks and
+tool-result messages. Those nodes can accidentally inherit the owner Agent,
+create a synthetic target-user envelope, or resume the owner after the tool
+result even when the initial text response looked correct.
+
+**What it breaks**: the simple happy path passes while real coding Agents either
+lose their tool output, render it under the wrong Agent, or invoke Lobe AI for
+the final answer.
+
+**Correct approach**: exercise a deterministic real tool call through the same
+gateway/device route, then assert the complete persisted tree: original owner
+user, target assistant/tool call, tool result, and target final response. Also
+assert there is no owner assistant, `callAgent`, or synthetic target-user row.
