@@ -350,4 +350,39 @@ describe('createGitHubConnectorClient', () => {
       'https://api.github.com/user/orgs?per_page=20',
     );
   });
+
+  it('falls back to public organizations when the token lacks organization scope', async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.url.endsWith('/user/orgs?per_page=20')) {
+        return new Response(
+          JSON.stringify({
+            message: 'You need at least read:org scope or user scope to list your organizations.',
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 403,
+          },
+        );
+      }
+      if (request.url.endsWith('/user')) {
+        return Response.json({ id: 1, login: 'octocat' });
+      }
+      if (request.url.endsWith('/users/octocat/orgs?per_page=20')) {
+        return Response.json([{ description: 'Making AI accessible.', login: 'lobehub' }]);
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetch);
+    const client = createGitHubConnectorClient({ accessToken: 'production-token' });
+
+    await expect(client.listUserOrganizations()).resolves.toEqual([
+      { description: 'Making AI accessible.', login: 'lobehub' },
+    ]);
+    expect(fetch.mock.calls.map(([input, init]) => new Request(input, init).url)).toEqual([
+      'https://api.github.com/user/orgs?per_page=20',
+      'https://api.github.com/user',
+      'https://api.github.com/users/octocat/orgs?per_page=20',
+    ]);
+  });
 });
