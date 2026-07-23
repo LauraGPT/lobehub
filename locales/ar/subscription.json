@@ -34,7 +34,7 @@
   "billing.unpaid": "غير مدفوع",
   "billing.validUntil": "صالح حتى",
   "billing.view": "عرض",
-  "billingRecovery.description": "تم تعليق فوائد عضويتك. قم بدفع الفاتورة المستحقة لاستعادة هذه الاشتراك.",
+  "billingRecovery.description": "تم تعليق فوائد عضويتك. قم بدفع الفاتورة المستحقة لاستعادة هذا الاشتراك.",
   "billingRecovery.pay": "دفع الفاتورة المستحقة",
   "billingRecovery.paymentError": "تعذر فتح الفاتورة المستحقة. يرجى المحاولة مرة أخرى.",
   "billingRecovery.planLocked": "قم بدفع الفاتورة المستحقة أو قم بإلغاء هذا الاشتراك قبل تغيير الخطط.",
