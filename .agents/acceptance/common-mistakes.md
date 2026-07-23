@@ -151,3 +151,24 @@ activity into their real browsing context, and erodes trust in automated runs.
 report auth as ❌ Blocked and request ONE manual sign-in. The corrected policy
 lives in `references/auth.md` ("When the instance comes up signed out") and
 PROJECT.md §4 Electron.
+
+---
+
+## Cross-agent dispatch envelopes are not visible user turns
+
+**Wrong approach**: treat every persisted `role: user` row as a user-authored
+message when building the visible conversation list.
+
+**Why it's wrong**: `callAgent` persists a synthetic user envelope beneath the
+caller assistant so the target Agent has an isolated execution context. When
+that envelope is rendered, the original prompt appears twice even though the
+target Agent produced only one reply.
+
+**What it breaks**: users see a duplicate prompt bubble and cannot tell whether
+the delegation ran once or twice; acceptance screenshots become misleading.
+
+**Correct approach**: keep the envelope in the context tree, but omit it from
+the visible flat list when its `agentId` differs from its parent assistant's
+`agentId`. Continue traversal through it so the target assistant reply remains
+an independent visible message. Cover the inverse case so same-Agent follow-up
+user turns remain visible.

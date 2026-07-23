@@ -178,6 +178,25 @@ export class FlatListBuilder {
       const message = this.messageMap.get(childId);
       if (!message) continue;
 
+      // A cross-agent dispatch persists an internal user envelope beneath the
+      // caller's assistant message so the target agent has its own execution
+      // context. It is transport data, not a second user-authored turn. Keep it
+      // in the context tree, but skip its top-level bubble and continue from it
+      // so the target assistant reply still renders independently.
+      const parentMessage = message.parentId ? this.messageMap.get(message.parentId) : undefined;
+      const isCrossAgentDispatchEnvelope =
+        message.role === 'user' &&
+        parentMessage?.role === 'assistant' &&
+        !!message.agentId &&
+        !!parentMessage.agentId &&
+        message.agentId !== parentMessage.agentId;
+
+      if (isCrossAgentDispatchEnvelope) {
+        processedIds.add(message.id);
+        this.buildFlatListRecursive(message.id, flatList, processedIds, allMessages);
+        continue;
+      }
+
       // Priority 1: Compare message group
       const messageGroup = message.groupId ? this.messageGroupMap.get(message.groupId) : undefined;
 
