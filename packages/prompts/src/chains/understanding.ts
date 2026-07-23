@@ -3,6 +3,7 @@ import {
   MAX_ANALYSIS_DESCRIPTION_LENGTH,
   MAX_ANALYSIS_SHORT_TEXT_LENGTH,
   MAX_PERSONA_CONTENT_LENGTH,
+  type UnderstandingFeedbackTurn,
 } from '@lobechat/types';
 
 type SafeCollectionDiagnostics = Pick<
@@ -12,6 +13,7 @@ type SafeCollectionDiagnostics = Pick<
 
 interface UnderstandingPersonaPromptInput {
   diagnostics: SafeCollectionDiagnostics;
+  feedback?: UnderstandingFeedbackTurn[];
   providers: string[];
 }
 
@@ -189,9 +191,24 @@ const outputContract = [
 
 export const chainUnderstandingPersona = ({
   diagnostics,
+  feedback = [],
   providers,
-}: UnderstandingPersonaPromptInput): string =>
-  [
+}: UnderstandingPersonaPromptInput): string => {
+  const feedbackSection =
+    feedback.length > 0
+      ? [
+          'Direct user revision guidance follows as trusted preferences for this rewrite. Apply every compatible turn; when turns conflict, the higher revision wins. Guidance may correct interpretation but does not increase evidence counts or justify claims unsupported by either the connected sources or explicit user statements.',
+          JSON.stringify(
+            feedback.map(({ content, revision }) => ({
+              content,
+              revision,
+            })),
+          ),
+          'End direct user revision guidance.',
+        ]
+      : [];
+
+  return [
     'Write one coherent onboarding persona from all available provider-delimited Markdown and XML contexts.',
     'Analyze the original provider contexts directly, not prior generated analyses.',
     'Providers represented in the input (untrusted JSON):',
@@ -200,6 +217,7 @@ export const chainUnderstandingPersona = ({
     ),
     'End provider metadata.',
     `Collection completeness: ${formatCompleteness(diagnostics)}. Treat incomplete collection as uncertainty; do not invent the missing information.`,
+    ...feedbackSection,
     'The current ephemeral user message contains the complete available provider contexts.',
     'Reconcile conflicts by preferring explicit and specific statements and signals recurring across independent providers.',
     'Deduplicate overlapping identities and interests. Combine descriptions only when they refer to the same durable signal.',
@@ -207,3 +225,4 @@ export const chainUnderstandingPersona = ({
     ...sharedAnalysisRules,
     outputContract,
   ].join('\n\n');
+};
