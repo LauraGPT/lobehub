@@ -178,3 +178,25 @@ user follow-up after a direct cross-agent reply has the same shape. Only apply
 the display fallback when the parent assistant contains the matching
 `lobe-agent-management.callAgent` tool; single explicit mentions should instead
 be routed directly and never create an envelope in the first place.
+
+## A terminal Claude Code reply is not evidence of live streaming
+
+**Wrong approach**: ask a device-executed Claude Code agent for a one-token fixed
+marker, record until the process exits, and treat the eventual assistant text or
+a refreshed screenshot as proof that the reply streamed into the open Topic.
+
+**Why it's wrong**: `lh hetero exec` can run Claude Code without
+`--include-partial-messages`. In that mode the adapter receives only the final
+assistant snapshot, so the UI may show an empty target-Agent shell for the whole
+run and acquire the text only during terminal reconciliation. A short fixed
+marker also has no observable intermediate state even when partial framing works.
+
+**What it breaks**: the acceptance proves persistence and refresh recovery but
+does not prove the user sees the answer arrive live; a GIF of an empty shell is
+mistaken for streaming evidence.
+
+**Correct approach**: enable Claude Code partial messages on the device/sandbox
+CLI spawn path. Verify with a multi-part response and timestamped DOM/store
+samples before any reload, then attach a GIF whose frames visibly progress and
+whose final frame contains the complete answer. Check persistence separately by
+refreshing only after the live-stream assertion has passed.
