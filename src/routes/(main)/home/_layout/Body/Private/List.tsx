@@ -16,6 +16,7 @@ import { homeAgentListSelectors } from '@/store/home/selectors';
 import CreateAgentButton from '../Agent/CreateAgentButton';
 import Group from '../Agent/List/Group';
 import SessionList from '../Agent/List/List';
+import { useKeepSidebarListed } from '../Agent/List/useAgentList';
 
 interface PrivateListProps {
   hideCreateButton?: boolean;
@@ -29,22 +30,26 @@ interface PrivateListProps {
 const PrivateList = memo<PrivateListProps>(({ hideCreateButton, onMoreClick }) => {
   const { t } = useTranslation('chat');
   const isInit = useHomeStore(homeAgentListSelectors.isAgentListInit);
-  const privatePinned = useHomeStore(homeAgentListSelectors.privatePinnedAgents, isEqual);
-  const privateGroups = useHomeStore(homeAgentListSelectors.privateAgentGroups, isEqual);
+  const rawPrivatePinned = useHomeStore(homeAgentListSelectors.privatePinnedAgents, isEqual);
+  const rawPrivateGroups = useHomeStore(homeAgentListSelectors.privateAgentGroups, isEqual);
   const privateAgentPageSize = useGlobalStore(systemStatusSelectors.privateAgentPageSize);
-  const privateUngrouped = useHomeStore(
-    homeAgentListSelectors.privateUngroupedAgentsLimited(privateAgentPageSize),
-    isEqual,
-  );
-  const privateUngroupedCount = useHomeStore(homeAgentListSelectors.privateUngroupedAgentsCount);
+  const rawPrivateUngrouped = useHomeStore(homeAgentListSelectors.privateUngroupedAgents, isEqual);
   const openAllAgentsDrawer = useHomeStore((s) => s.openAllAgentsDrawer);
+  const keep = useKeepSidebarListed();
 
   if (!isInit) return <SkeletonList rows={2} />;
+
+  // Drop the caller's sidebar-hidden items BEFORE the page-size cut so a
+  // removal doesn't shrink the visible page below `privateAgentPageSize`.
+  const privatePinned = keep(rawPrivatePinned);
+  const privateGroups = rawPrivateGroups.map((group) => ({ ...group, items: keep(group.items) }));
+  const filteredUngrouped = keep(rawPrivateUngrouped);
+  const privateUngrouped = filteredUngrouped.slice(0, privateAgentPageSize);
 
   const hasPinned = privatePinned.length > 0;
   const hasGroups = privateGroups.length > 0;
   const hasUngrouped = privateUngrouped.length > 0;
-  const hasMore = privateUngroupedCount > privateAgentPageSize;
+  const hasMore = filteredUngrouped.length > privateAgentPageSize;
   // `openAllAgentsDrawer` targets the Home-owned drawer; compact reusers
   // (e.g. the agent-detail switcher) pass their own navigation handler.
   const handleMoreClick = onMoreClick ?? openAllAgentsDrawer;

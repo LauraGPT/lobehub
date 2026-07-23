@@ -106,6 +106,14 @@ export class WorkspaceUserSettingsActionImpl {
             },
           }
         : {}),
+      ...(patch.sidebarGroupAssignments
+        ? {
+            sidebarGroupAssignments: {
+              ...previous.sidebarGroupAssignments,
+              ...patch.sidebarGroupAssignments,
+            },
+          }
+        : {}),
     };
     const workspaceId = getActiveWorkspaceId();
     const swrKey = workspaceId ? [WORKSPACE_USER_SETTINGS_SWR_KEY, workspaceId] : null;

@@ -1,0 +1,66 @@
+import type { SidebarLayoutPreference } from '@lobechat/types';
+import isEqual from 'fast-deep-equal';
+import { useEffect } from 'react';
+
+import { useGlobalStore } from '@/store/global';
+import { useUserStore } from '@/store/user';
+import { workspaceUserSettingsSelectors } from '@/store/user/selectors';
+
+/**
+ * Two-way bridge between the client-side sidebar layout overlay
+ * (`status.workspace.sidebarItems` / `.hiddenSidebarSections` — a single
+ * device-local bucket) and the per-member server preference
+ * (`workspace_user_settings.preference.sidebar`), so each member's section
+ * order and hidden sections follow them across devices.
+ *
+ * - Pull: server value → overlay whenever they diverge (workspace switch,
+ *   another device's edit arriving via SWR revalidation).
+ * - Push: local overlay edits (customize-sidebar modal, "Hide Section") →
+ *   server, skipped when the overlay already equals the server value (which
+ *   is exactly the state a pull leaves behind, so the bridge cannot loop).
+ *
+ * Expansion state (`sidebarExpandedKeys` etc.) deliberately stays local.
+ */
+export const useSyncWorkspaceSidebarPreference = (workspaceId: string | null) => {
+  const serverSidebar = useUserStore(workspaceUserSettingsSelectors.sidebarLayout, isEqual);
+
+  // Pull: apply the per-member server layout onto the local overlay.
+  useEffect(() => {
+    if (!workspaceId || !serverSidebar) return;
+    const { status, updateSystemStatus } = useGlobalStore.getState();
+    const patch: { hiddenSidebarSections?: string[]; sidebarItems?: string[] } = {};
+    if (serverSidebar.items && !isEqual(status.workspace?.sidebarItems, serverSidebar.items))
+      patch.sidebarItems = serverSidebar.items;
+    if (
+      serverSidebar.hiddenSections &&
+      !isEqual(status.workspace?.hiddenSidebarSections, serverSidebar.hiddenSections)
+    )
+      patch.hiddenSidebarSections = serverSidebar.hiddenSections;
+    if (Object.keys(patch).length > 0)
+      updateSystemStatus(patch, 'syncWorkspaceSidebarPreference/pull');
+  }, [workspaceId, serverSidebar]);
+
+  // Push: persist local overlay edits (and seed the server from a
+  // pre-existing local customization the first time it changes).
+  useEffect(() => {
+    if (!workspaceId) return;
+    return useGlobalStore.subscribe(
+      (s) => ({
+        hiddenSections: s.status.workspace?.hiddenSidebarSections,
+        items: s.status.workspace?.sidebarItems,
+      }),
+      (overlay) => {
+        if (overlay.items === undefined && overlay.hiddenSections === undefined) return;
+        const state = useUserStore.getState();
+        const current = state.workspaceUserPreference.sidebar;
+        const next: SidebarLayoutPreference = {
+          ...(overlay.hiddenSections ? { hiddenSections: overlay.hiddenSections } : {}),
+          ...(overlay.items ? { items: overlay.items } : {}),
+        };
+        if (isEqual(current ?? {}, next)) return;
+        void state.updateWorkspaceUserPreference({ sidebar: next });
+      },
+      { equalityFn: isEqual },
+    );
+  }, [workspaceId]);
+};

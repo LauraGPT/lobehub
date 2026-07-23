@@ -19,7 +19,29 @@ const agentModelOverrideById =
   (s: UserStore): AgentModelOverride | undefined =>
     s.workspaceUserPreference.agentModelOverrides?.[agentId];
 
+const EMPTY_HIDDEN: string[] = [];
+
+/**
+ * Sidebar items the caller removed from their sidebar in the active
+ * workspace. Empty in personal mode (the preference bucket never loads
+ * there — the personal counterpart lives in `users.preference`).
+ */
+const sidebarHiddenAgentIds = (s: UserStore): string[] =>
+  s.workspaceUserPreference.sidebarHiddenAgentIds ?? EMPTY_HIDDEN;
+
+/** Whether the caller removed this item from their sidebar (default is listed). */
+const isAgentHiddenFromSidebar =
+  (agentId: string) =>
+  (s: UserStore): boolean =>
+    !!s.workspaceUserPreference.sidebarHiddenAgentIds?.includes(agentId);
+
+/** Per-member sidebar sections layout for the active workspace. */
+const sidebarLayout = (s: UserStore) => s.workspaceUserPreference.sidebar;
+
 export const workspaceUserSettingsSelectors = {
   agentDeviceOverrideById,
   agentModelOverrideById,
+  isAgentHiddenFromSidebar,
+  sidebarHiddenAgentIds,
+  sidebarLayout,
 };
