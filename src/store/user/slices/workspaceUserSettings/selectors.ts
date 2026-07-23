@@ -38,10 +38,14 @@ const isAgentHiddenFromSidebar =
 /** Per-member sidebar sections layout for the active workspace. */
 const sidebarLayout = (s: UserStore) => s.workspaceUserPreference.sidebar;
 
+/** The workspace whose preference row is currently loaded (null = not yet fetched). */
+const preferenceWorkspaceId = (s: UserStore) => s.workspaceUserPreferenceWorkspaceId;
+
 export const workspaceUserSettingsSelectors = {
   agentDeviceOverrideById,
   agentModelOverrideById,
   isAgentHiddenFromSidebar,
+  preferenceWorkspaceId,
   sidebarHiddenAgentIds,
   sidebarLayout,
 };

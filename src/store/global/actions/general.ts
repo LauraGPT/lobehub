@@ -181,6 +181,25 @@ export class GlobalGeneralActionImpl {
     });
   };
 
+  clearWorkspaceSidebarOverlay = (): void => {
+    if (!this.#get().isStatusInit) return;
+    const status = this.#get().status;
+    const workspace = status.workspace;
+    if (
+      !workspace ||
+      (workspace.sidebarItems === undefined && workspace.hiddenSidebarSections === undefined)
+    )
+      return;
+    // `updateSystemStatus` deep-merges, which cannot delete overlay keys —
+    // rebuild `workspace` without the sidebar-layout fields so the workspace
+    // falls back to defaults ("untouched" semantics) instead of keeping a
+    // previous workspace's layout.
+    const { hiddenSidebarSections: _hidden, sidebarItems: _items, ...rest } = workspace;
+    const nextStatus = { ...status, workspace: rest };
+    this.#set({ status: nextStatus }, false, n('clearWorkspaceSidebarOverlay'));
+    this.#get().statusStorage.saveToLocalStorage(nextStatus);
+  };
+
   resetSidebarCustomization = (): void => {
     this.#get().updateSystemStatus(
       {

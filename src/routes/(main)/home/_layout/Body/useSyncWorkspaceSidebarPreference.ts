@@ -23,10 +23,21 @@ import { workspaceUserSettingsSelectors } from '@/store/user/selectors';
  */
 export const useSyncWorkspaceSidebarPreference = (workspaceId: string | null) => {
   const serverSidebar = useUserStore(workspaceUserSettingsSelectors.sidebarLayout, isEqual);
+  const loadedWorkspaceId = useUserStore(workspaceUserSettingsSelectors.preferenceWorkspaceId);
 
   // Pull: apply the per-member server layout onto the local overlay.
   useEffect(() => {
-    if (!workspaceId || !serverSidebar) return;
+    // Only trust the preference bucket once it holds THIS workspace's row —
+    // before that, `serverSidebar` may be the previous workspace's value (or
+    // an unfetched placeholder) and must not be pulled or cleared from.
+    if (!workspaceId || loadedWorkspaceId !== workspaceId) return;
+    if (!serverSidebar) {
+      // Loaded and no saved sidebar preference: drop any layout left in the
+      // shared overlay bucket by a previously-visited workspace so this one
+      // renders its defaults.
+      useGlobalStore.getState().clearWorkspaceSidebarOverlay();
+      return;
+    }
     const { status, updateSystemStatus } = useGlobalStore.getState();
     const patch: { hiddenSidebarSections?: string[]; sidebarItems?: string[] } = {};
     if (serverSidebar.items && !isEqual(status.workspace?.sidebarItems, serverSidebar.items))
@@ -38,12 +49,14 @@ export const useSyncWorkspaceSidebarPreference = (workspaceId: string | null) =>
       patch.hiddenSidebarSections = serverSidebar.hiddenSections;
     if (Object.keys(patch).length > 0)
       updateSystemStatus(patch, 'syncWorkspaceSidebarPreference/pull');
-  }, [workspaceId, serverSidebar]);
+  }, [workspaceId, serverSidebar, loadedWorkspaceId]);
 
   // Push: persist local overlay edits (and seed the server from a
   // pre-existing local customization the first time it changes).
   useEffect(() => {
-    if (!workspaceId) return;
+    // Same trust boundary as the pull effect: don't diff local edits against
+    // (or seed the server from) another workspace's baseline.
+    if (!workspaceId || loadedWorkspaceId !== workspaceId) return;
     return useGlobalStore.subscribe(
       (s) => ({
         hiddenSections: s.status.workspace?.hiddenSidebarSections,
@@ -62,5 +75,5 @@ export const useSyncWorkspaceSidebarPreference = (workspaceId: string | null) =>
       },
       { equalityFn: isEqual },
     );
-  }, [workspaceId]);
+  }, [workspaceId, loadedWorkspaceId]);
 };
