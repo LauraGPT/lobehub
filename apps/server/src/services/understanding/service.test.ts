@@ -191,9 +191,15 @@ const createHarness = (initialSession?: OnboardingUnderstandingSession) => {
     model: 'gpt-5.4-mini',
     provider: 'lobehub',
   }));
-  const generateObject = vi.fn(async () => analysis);
+  const generateObject = vi.fn(
+    async (
+      _input: Parameters<UnderstandingServiceDependencies['generator']['generateObject']>[0],
+      _options: Parameters<UnderstandingServiceDependencies['generator']['generateObject']>[1],
+    ) => analysis,
+  );
+  type CreateMessageInput = Parameters<UnderstandingServiceDependencies['messages']['create']>[0];
   const messages = {
-    create: vi.fn(async () => ({ id: 'assistant-structured' })),
+    create: vi.fn(async (_input: CreateMessageInput) => ({ id: 'assistant-structured' })),
     findById: vi.fn(async (id: string) => ({
       content: JSON.stringify(analysis),
       metadata: assistantMetadata.has(id)
