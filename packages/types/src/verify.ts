@@ -162,11 +162,12 @@ export interface AcceptanceMetadata {
 }
 
 /**
- * The user's per-check verdict on the acceptance union. `accept` is sticky —
- * an accepted check stays settled across later rounds; `reject` binds to the
- * round it was made on and becomes iteration history once a newer round lands.
+ * The user's per-check verdict on the acceptance union. `accept` and `ignore`
+ * are sticky — both settle the check across later rounds; `reject` binds to
+ * the round it was made on and becomes iteration history once a newer round
+ * lands.
  */
-export type AcceptanceCheckReviewAction = 'accept' | 'reject';
+export type AcceptanceCheckReviewAction = 'accept' | 'ignore' | 'reject';
 
 /**
  * A user-drawn region on one evidence image, in coordinates normalized to the
@@ -480,6 +481,116 @@ export interface VerifyRunMetadata {
    * run that *authored* the report — and is many-to-one.
    */
   origin?: VerifyRunOrigin;
+}
+
+export type VerifyVisualizationValue = boolean | null | number | string;
+
+export interface VerifyVisualizationField {
+  key: string;
+  label?: string;
+  type: 'boolean' | 'category' | 'number' | 'string' | 'temporal';
+  unit?: string;
+}
+
+/** Small inline dataset used by one or more check-result views. */
+export interface VerifyVisualizationDataset {
+  fields: VerifyVisualizationField[];
+  id: string;
+  rows: Record<string, VerifyVisualizationValue>[];
+}
+
+interface VerifyVisualizationViewBase {
+  context?: string;
+  dataset: string;
+  id: string;
+  title?: string;
+  version: 1;
+}
+
+export interface VerifyMetricComparisonView extends VerifyVisualizationViewBase {
+  encoding: {
+    after: string;
+    afterSamples?: string;
+    before: string;
+    beforeSamples?: string;
+    direction?: string;
+    label: string;
+    statistic?: string;
+    target?: string;
+    unit?: string;
+  };
+  type: 'metric-comparison';
+}
+
+export interface VerifyLineChartView extends VerifyVisualizationViewBase {
+  encoding: {
+    series: {
+      field: string;
+      label?: string;
+      /** Visual role: muted baselines stay gray while primary/accent series carry emphasis. */
+      style?: 'accent' | 'muted' | 'primary';
+    }[];
+    x: string;
+    xLabel?: string;
+    yLabel?: string;
+  };
+  type: 'line-chart';
+}
+
+export interface VerifyScatterPlotView extends VerifyVisualizationViewBase {
+  encoding: {
+    color?: string;
+    label?: string;
+    x: string;
+    xLabel?: string;
+    y: string;
+    yLabel?: string;
+  };
+  type: 'scatter-plot';
+}
+
+export interface VerifyHeatmapView extends VerifyVisualizationViewBase {
+  encoding: { value: string; x: string; y: string };
+  type: 'heatmap';
+}
+
+export interface VerifyBarChartView extends VerifyVisualizationViewBase {
+  encoding: {
+    category: string;
+    series: { field: string; label?: string }[];
+    valueLabel?: string;
+  };
+  type: 'bar-chart';
+}
+
+export interface VerifyTableView extends VerifyVisualizationViewBase {
+  encoding?: {
+    columns?: string[];
+    /** Bold the best numeric value in each configured metric column. */
+    highlights?: { field: string; mode: 'max' | 'min' }[];
+  };
+  type: 'table';
+}
+
+export type VerifyVisualizationView =
+  | VerifyBarChartView
+  | VerifyHeatmapView
+  | VerifyLineChartView
+  | VerifyMetricComparisonView
+  | VerifyScatterPlotView
+  | VerifyTableView;
+
+/** Versioned structured presentation manifest attached to one check result. */
+export interface VerifyVisualizationManifest {
+  datasets: VerifyVisualizationDataset[];
+  schemaVersion: 1;
+  views: VerifyVisualizationView[];
+}
+
+/** Known check-result metadata. Remains open for verifier-specific extensions. */
+export interface VerifyCheckResultMetadata {
+  [key: string]: unknown;
+  visualization?: VerifyVisualizationManifest;
 }
 
 /**
