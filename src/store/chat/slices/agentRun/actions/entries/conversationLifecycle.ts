@@ -82,7 +82,7 @@ import { topicMapKey } from '@/store/chat/utils/topicMapKey';
 import { getElectronStoreState } from '@/store/electron';
 import { useGlobalStore } from '@/store/global';
 import { systemStatusSelectors } from '@/store/global/selectors';
-import { pageAgentRuntime } from '@/store/tool/slices/builtin/executors/lobe-page-agent';
+import { pageAgentRuntime } from '@/store/tool/slices/builtin/executors/pageAgentRuntime';
 import { type StoreSetter } from '@/store/types';
 import { getUserStoreState } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
@@ -1305,7 +1305,7 @@ export class ConversationLifecycleActionImpl {
         // Optimistically bump the sort key (`sortUpdatedAt`, the sidebar's activity-time
         // sort/group key) so the topic jumps to the top immediately, before the SWR
         // refetch returns the server's fresh `topicActivityAt`. Bumping `updatedAt` here
-        // would no longer reorder anything — the sidebar sorts by `sortUpdatedAt`. (LOBE-11543)
+        // would no longer reorder anything — the sidebar sorts by `sortUpdatedAt`. 
         this.#get().internal_dispatchTopic({
           type: 'updateTopic',
           id: operationContext.topicId,

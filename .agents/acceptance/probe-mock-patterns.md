@@ -64,6 +64,22 @@ HttpOnly, so an empty `document.cookie` does not establish signed-out state.
 
 ## Project-specific recipes
 
+### Task CLI polling with seeded API-key auth
+
+**Situation:** A local acceptance run is driven through `lh task run` with the
+seeded `LOBEHUB_CLI_API_KEY`, and the test needs to observe the asynchronous
+repair lifecycle.
+
+**Doesn't work:** `lh task run <id> --follow` switches to `/webapi/*`, which
+requires OIDC and rejects API-key auth after the task has already started.
+Likewise, `lh acceptance view task:T-N` does not currently resolve a task
+identifier to its internal subject id.
+
+**Works:** Start the task without `--follow`, poll with `lh task view T-N`, and
+query the aggregate with `lh acceptance view task:<internal-task-id>`. The start
+response and task activity expose the operation and topic ids; the Acceptance
+bundle exposes the repair round and final rollup.
+
 ### Message-attached heterogeneous-agent errors
 
 Inject a temporary assistant message through
@@ -140,6 +156,22 @@ adding or moving a module, then re-probe. Confirm the new code is live by a
 structural signal (a renamed component in the fiber chain, a new class in the
 computed cascade) before concluding anything about behavior.
 
+### Production debug proxy stays on the development loading shell in an isolated browser
+
+**Situation:** verifying a public SPA route with local frontend code against the
+production backend through `/_dangerous_local_dev_proxy`.
+
+**Doesn't work:** treating a successful Vite connection or the route's debug ID
+as proof that the product page loaded. In a fresh, signed-out automation context,
+the proxy can remain on the development loading shell without a useful page error;
+its screenshot is blank except for the debug marker.
+
+**Works:** visually reject the loading-shell screenshot, then use the adapter's
+isolated local full stack. Seed the test user, ingest a representative public
+Acceptance fixture through the local CLI, and capture the same route in separate
+authenticated and storage-empty browser contexts. This proves both owner and
+shared-viewer rendering without depending on production browser cookies.
+
 ### Reading a transitioned CSS property immediately after focus/hover
 
 **Situation:** asserting that a `:focus-within` / `:hover` rule reveals a
@@ -168,6 +200,101 @@ in the renderer graph, which makes Vite optimize and execute `vitest` in the app
 import the locale resource there. Restart the isolated Electron instance after a
 bad scan because the optimized dependency graph can remain poisoned.
 
+### Desktop tab switching is not `activateTab` alone — drive the real tab element
+
+**Situation:** benchmarking or driving a desktop tab switch from an `eval`
+payload, using `window.__LOBE_STORES.electron().activateTab(id)`.
+
+**Doesn't work:** on the single-router shell, `activateTab` only writes
+`activeTabId`; navigation is a second step performed by the TabBar
+(`handleActivate` = `activateTab(id)` + `startTransition(navigate(url))`). Calling
+the store action alone leaves `location.pathname` on the previous route, so the
+run measures a no-op — visible as a tiny settle time, \~4 DOM mutations, and zero
+long tasks, which reads like an impossibly fast surface rather than a broken
+probe. The per-tab-router shell does switch content from the store action alone,
+so the same payload is a real switch on one build and a no-op on the other:
+any A/B built on it is invalid.
+
+**Works:** drive the tab element the user actually clicks, and assert the
+navigation happened.
+
+```js
+const all = [...document.querySelectorAll('[data-insp-path*="TabBar/TabItem.tsx"]')].filter(
+  (e) => e.getBoundingClientRect().width > 100,
+);
+// two nested nodes per tab match — keep only the outermost
+const roots = all
+  .filter((e) => !all.some((o) => o !== e && o.contains(e)))
+  .sort((a, b) => a.getBoundingClientRect().x - b.getBoundingClientRect().x);
+// roots[i] aligns 1:1 with store tabs[i]; verify roots.length === tabs.length
+roots[idx].click();
+```
+
+`el.click()` reaches the React `onClick` here (this is not a controlled input, so
+the generic D11 trusted-input caveat does not apply). Always record
+`location.pathname` before and after and keep a `navigated` flag on every sample —
+that flag is what catches a payload that silently stopped switching.
+
+### Clicking an already-active tab is a no-op — a desynced tab can never be re-entered by clicking
+
+**Situation:** a probe adds a tab with `addTab(url)` and then clicks it to enter that route.
+
+**Doesn't work:** `addTab` already activates the new tab, so the later click lands on the _active_ tab
+and the shell does nothing. On the single-router shell this can leave `activeTabId` pointing at a tab
+whose URL names one topic while `location.pathname` and `chat().activeTopicId` still name another —
+after which no amount of clicking recovers it, and every downstream assertion reads the wrong page.
+Symptom: the probe's final `location.pathname` is not the tab you clicked, with no error anywhere.
+
+**Works:** after `addTab`, enter the route with a full navigation
+(`app-probe.sh goto <url>`) before starting the trials, and assert the three values agree before
+measuring:
+
+```js
+const st = window.__LOBE_STORES.electron();
+const chat = window.__LOBE_STORES.chat();
+const tab = (st.tabs || []).find((t) => t.id === st.activeTabId);
+// tab.url, location.pathname and chat.activeTopicId must all point at the same topic
+```
+
+### Attributing switch work to hidden keep-alive trees — classify on BOTH sides of the action
+
+**Situation:** measuring what a per-tab keep-alive shell costs while a tab is hidden.
+
+**Doesn't work:** collecting the hidden slots (the `display: none` children of the TabHost root) _before_
+the switch and classifying every mutation against that list. The switch is precisely what makes the
+target tab visible, and that tab was hidden when the list was captured — so the incoming tab's own
+render, which is necessary user-visible work, is counted as hidden-tree work. This produced a confident
+"\~44% of switch work happens off-screen" that was pure artefact, and it survived review because the
+number looked plausible.
+
+**Works:** classify against the intersection — slots hidden **before** the switch that are **still
+hidden after** it:
+
+```js
+const before = hiddenSlots(); // display:none children of the TabHost root
+/* click the tab, observe mutations */
+const after = hiddenSlots();
+const stillHidden = before.filter((s) => after.includes(s));
+```
+
+Measured this way, still-hidden slots produced **0** mutations in 6/6 switches: React
+`<Activity mode="hidden">` keeps state, tears down effects, and commits nothing while hidden.
+
+**General rule:** when a measurement classifies work by a property that the measured action itself
+changes (visible/hidden, active/inactive, mounted/unmounted), capture the classification on both sides
+and use the intersection. Otherwise the action's own effect lands in the wrong bucket.
+
+### `eval` declarations persist in the page global scope
+
+**Situation:** running several `agent-browser eval` payloads against one renderer.
+
+**Doesn't work:** a bare top-level `const els = …` in a second payload fails with
+`SyntaxError: Identifier 'els' has already been declared`, because each `eval`
+shares the page's global scope.
+
+**Works:** wrap every payload in an IIFE (`(() => { … })()`), or attach state to a
+single namespaced `window.__X` object.
+
 ### Shared agent-browser session names can cross-wire concurrent acceptance runs
 
 **Situation:** a Web acceptance run uses the adapter's default `lobehub-dev`
@@ -188,6 +315,70 @@ agent-browser --session "$RUN_SESSION" \
 
 Then assert `get url` and `app-probe.sh auth` on that exact session before
 capturing evidence.
+
+### Leftover React Scan instrumentation poisons every screenshot
+
+**Situation:** capturing UI evidence in a dev instance the user (or an earlier
+round) had DevTools / the DevDock open on.
+
+**Doesn't work:** deleting the overlay canvas (`html > canvas`) once and
+screenshotting. React Scan re-creates it on the next render pass, so a probe that
+reports `0 canvases` a few seconds later is only measuring that nothing
+re-rendered in that window — the outlines return the moment the app updates.
+`localStorage` is also not a reliable read: `react-scan-options.enabled` and
+`LOBE_DEV_DOCK_UI.reactScan` can both say `false` while the instrumentation is
+live, because it was enabled at runtime and never written back.
+
+**Works:** inject a capture-time style rule instead of removing nodes —
+`html > canvas { display: none !important; }` appended to `documentElement`. It
+survives re-creation, touches no product code or styles, and disappears on
+reload. Remove it at teardown. Disclose it in the report: it suppresses a dev
+overlay, which is a capture-time adjustment a reviewer should know about.
+
+### Production-backend web runs have no seeded agent-browser session
+
+**Situation:** verifying frontend-only work against real production data through
+`bun run dev:spa`'s `_dangerous_local_dev_proxy` URL.
+
+**Doesn't work:** the adapter's Web evidence path (`agent-browser --session
+lobehub-dev` seeded by `setup-auth.sh web-seed`) authenticates against the LOCAL
+server. There is no sanctioned way to give that session a production login —
+`setup-auth.sh web`'s Chrome-cookie injection is explicitly forbidden against
+production.
+
+**Works:** drive the proxy in the user's already-authenticated Chrome (the
+`claude-in-chrome` tooling), and compensate for the weaker evidence channel with
+DOM measurements (`getBoundingClientRect` / `getComputedStyle`) alongside every
+screenshot, plus an independent server-side check through `lh` in a clean env.
+Prove the working-tree bundle is actually live first — read back a string that
+exists only in the working tree (e.g. a changed placeholder), never assume HMR
+applied.
+
+### Managed command runners can reap `electron-dev.sh start` children after the helper returns
+
+**Situation:** `electron-dev.sh start` (legacy and pool forms) reports that CDP
+and the renderer are ready, but the CDP port closes immediately after the helper
+command returns. The Electron log contains a normal renderer mount and no crash;
+changing from the saved login snapshot to the fresh golden profile does not alter
+the exit. The cause is not established.
+
+**Doesn't work:** retrying the helper with another pool id or changing the auth
+seed. Both instances become interactive during the helper's readiness loop and
+are gone before the next command can connect.
+
+**Works:** use the documented multi-instance Model B command in a long-lived PTY
+with the same isolated userData, Vite port, IPC id, and CDP port:
+
+```bash
+LOBE_DESKTOP_VITE_PORT=5175 \
+  LOBE_DESKTOP_USER_DATA_DIR=/tmp/lobe-electron-pool/ud-2 \
+  LOBE_IPC_ID=lobehub-desktop-dev-2 \
+  pnpm -C apps/desktop dev -- --remote-debugging-port=9224
+```
+
+Keep that command session open for the run. Confirm the CDP endpoint, project
+process path, `app-probe.sh ready`, renderer auth, server auth, and a raw-CDP
+screenshot before collecting evidence.
 
 ## Detailed references
 
