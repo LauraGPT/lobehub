@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createTaskRuntime } from '../task';
 
+const verifyMocks = vi.hoisted(() => ({ createCriteriaFromDrafts: vi.fn() }));
+
 vi.mock('@/server/routers/lambda/task', () => ({
   taskRouter: { createCaller: () => ({}) },
 }));
@@ -19,6 +21,10 @@ vi.mock('@/envs/app', () => ({
 // taskService instance per test, so a stubbed class is all we need here.
 vi.mock('@/server/services/task', () => ({
   TaskService: vi.fn(),
+}));
+
+vi.mock('@/server/services/verify/planGenerator', () => ({
+  VerifyPlanGeneratorService: vi.fn().mockImplementation(() => verifyMocks),
 }));
 
 describe('createTaskRuntime', () => {
@@ -729,6 +735,30 @@ describe('createTaskRuntime', () => {
         id: 'T-1',
         status: 'completed',
       });
+    });
+
+    it('defers completing the current task until its operation finishes', async () => {
+      const taskCaller = { updateStatus: vi.fn() };
+      const taskModel = {
+        resolve: vi.fn().mockResolvedValue({ id: 'task-1', identifier: 'T-1' }),
+        updateContext: vi.fn().mockResolvedValue({}),
+      };
+      const runtime = createTaskRuntime({
+        agentModel: { existsById: vi.fn() } as any,
+        operationId: 'operation-1',
+        taskCaller: taskCaller as any,
+        taskId: 'task-1',
+        taskModel: taskModel as any,
+        taskService: {} as any,
+      });
+
+      const result = await runtime.updateTaskStatus({ identifier: 'T-1', status: 'completed' });
+
+      expect(result).toMatchObject({ success: true });
+      expect(taskModel.updateContext).toHaveBeenCalledWith('task-1', {
+        completion: { requestedByOperationId: 'operation-1' },
+      });
+      expect(taskCaller.updateStatus).not.toHaveBeenCalled();
     });
   });
 

@@ -303,7 +303,15 @@ describe('MessageModel Query Tests', () => {
           },
         ]);
         await trx.insert(files).values([
-          { id: 'f-0', url: 'abc', name: 'file-1', userId, fileType: 'image/png', size: 1000 },
+          {
+            id: 'f-0',
+            url: 'abc',
+            name: 'file-1',
+            userId,
+            fileType: 'image/png',
+            metadata: { height: 600, ratio: 1.3333, width: 800 },
+            size: 1000,
+          },
           { id: 'f-1', url: 'abc', name: 'file-1', userId, fileType: 'image/png', size: 100 },
           { id: 'f-3', url: 'abc', name: 'file-3', userId, fileType: 'image/png', size: 400 },
         ]);
@@ -329,7 +337,14 @@ describe('MessageModel Query Tests', () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('1');
       expect(result[0].imageList).toEqual([
-        { alt: 'file-1', id: 'f-0', url: `${domain}/f-0/abc` },
+        {
+          alt: 'file-1',
+          height: 600,
+          id: 'f-0',
+          ratio: 1.3333,
+          url: `${domain}/f-0/abc`,
+          width: 800,
+        },
         { alt: 'file-3', id: 'f-3', url: `${domain}/f-3/abc` },
       ]);
       expect(postProcessUrl).toHaveBeenCalledWith(
@@ -360,6 +375,7 @@ describe('MessageModel Query Tests', () => {
           name: 'query-by-id.png',
           userId,
           fileType: 'image/png',
+          metadata: { height: 720, ratio: 1.7778, width: 1280 },
           size: 1000,
         });
         await trx.insert(messagesFiles).values({
@@ -378,14 +394,128 @@ describe('MessageModel Query Tests', () => {
       expect(result[0].imageList).toEqual([
         {
           alt: 'query-by-id.png',
+          height: 720,
           id: 'query-by-id-file',
+          ratio: 1.7778,
           url: '/f/query-by-id-file/files/query-by-id.png',
+          width: 1280,
         },
       ]);
       expect(postProcessUrl).toHaveBeenCalledWith(
         'files/query-by-id.png',
         expect.objectContaining({ fileType: 'image/png', id: 'query-by-id-file' }),
       );
+    });
+
+    it('should hydrate sender in queryByIds like the main query path', async () => {
+      // Regression: messageGroup children are loaded through
+      // queryByIds; without the users join their sender was dropped and the
+      // client misattributed other members' messages to the viewer.
+      await serverDB.update(users).set({ fullName: 'Kermit' }).where(eq(users.id, otherUserId));
+      await serverDB.insert(messages).values({
+        content: 'sender hydration',
+        createdAt: new Date('2023-01-01'),
+        id: 'sender-hydration-message',
+        role: 'user',
+        userId: otherUserId,
+      });
+
+      const otherUserModel = new MessageModel(serverDB, otherUserId);
+      const [message] = await otherUserModel.queryByIds(['sender-hydration-message']);
+
+      expect(message.sender).toEqual({
+        avatar: null,
+        fullName: 'Kermit',
+        id: otherUserId,
+        username: null,
+      });
+    });
+
+    it('should keep sender for an avatar-less user in the main query path', async () => {
+      // Regression: drizzle nullifies a left-joined nested
+      // selection from its FIRST selected column. With `avatar` first, every
+      // avatar-less sender came back as `sender: null` and the client rendered
+      // the viewer's own identity on other members' messages.
+      await serverDB
+        .update(users)
+        .set({ avatar: null, fullName: 'Kermit', username: null })
+        .where(eq(users.id, otherUserId));
+      await serverDB.insert(messages).values({
+        content: 'avatar-less sender',
+        createdAt: new Date('2023-01-01'),
+        id: 'avatarless-sender-message',
+        role: 'user',
+        userId: otherUserId,
+      });
+
+      const otherUserModel = new MessageModel(serverDB, otherUserId);
+      const messagesResult = await otherUserModel.query();
+      const message = messagesResult.find((item) => item.id === 'avatarless-sender-message');
+
+      expect(message?.sender).toEqual({
+        avatar: null,
+        fullName: 'Kermit',
+        id: otherUserId,
+        username: null,
+      });
+    });
+
+    it('materializes safe audio metadata and only validated duration in both query paths', async () => {
+      await serverDB.transaction(async (trx) => {
+        await trx.insert(messages).values({
+          content: 'message with audio',
+          createdAt: new Date('2023-01-01'),
+          id: 'audio-duration-message',
+          role: 'user',
+          userId,
+        });
+        await trx.insert(files).values([
+          {
+            fileType: 'audio/mpeg',
+            id: 'audio-duration-valid',
+            metadata: { durationMs: 2500, transcript: 'must-not-leak' },
+            name: 'valid.mp3',
+            size: 1000,
+            url: 'files/valid.mp3',
+            userId,
+          },
+          {
+            fileType: 'audio/mpeg',
+            id: 'audio-duration-invalid',
+            metadata: { durationMs: -1, recording: 'must-not-leak' },
+            name: 'invalid.mp3',
+            size: 1000,
+            url: 'files/invalid.mp3',
+            userId,
+          },
+        ]);
+        await trx.insert(messagesFiles).values([
+          { fileId: 'audio-duration-valid', messageId: 'audio-duration-message', userId },
+          { fileId: 'audio-duration-invalid', messageId: 'audio-duration-message', userId },
+        ]);
+      });
+
+      const queried = (await messageModel.query()).find(
+        (message) => message.id === 'audio-duration-message',
+      );
+      const queriedById = (await messageModel.queryByIds(['audio-duration-message']))[0];
+
+      for (const message of [queried, queriedById]) {
+        expect(message?.audioList).toHaveLength(2);
+        expect(message?.audioList?.find((audio) => audio.id === 'audio-duration-valid')).toEqual({
+          alt: 'valid.mp3',
+          durationMs: 2500,
+          id: 'audio-duration-valid',
+          mimeType: 'audio/mpeg',
+          url: 'files/valid.mp3',
+        });
+        expect(message?.audioList?.find((audio) => audio.id === 'audio-duration-invalid')).toEqual({
+          alt: 'invalid.mp3',
+          id: 'audio-duration-invalid',
+          mimeType: 'audio/mpeg',
+          url: 'files/invalid.mp3',
+        });
+      }
     });
 
     it('should include translate, tts and other extra fields in query result', async () => {
@@ -1623,6 +1753,84 @@ describe('MessageModel Query Tests', () => {
 
       // Assert result
       expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('queryByKeyword with external candidates', () => {
+    it('hydrates current-scope messages in the legacy recency order', async () => {
+      await serverDB.insert(messages).values([
+        {
+          content: 'Own older message',
+          createdAt: new Date('2026-08-20T00:00:00.000Z'),
+          id: 'candidate-message-old',
+          role: 'user',
+          userId,
+        },
+        {
+          content: 'Own recent message',
+          createdAt: new Date('2026-08-25T00:00:00.000Z'),
+          id: 'candidate-message-recent',
+          role: 'assistant',
+          userId,
+        },
+        {
+          content: 'Other user message',
+          id: 'candidate-message-other',
+          role: 'user',
+          userId: otherUserId,
+        },
+      ]);
+      const ftsSearchCandidates = vi.fn().mockResolvedValue({
+        candidates: [
+          { id: 'candidate-message-other', score: 12 },
+          { id: 'candidate-message-deleted', score: 10 },
+          { id: 'candidate-message-old', score: 8 },
+          { id: 'candidate-message-recent', score: 6 },
+        ],
+        total: 4,
+      });
+      const model = new MessageModel(serverDB, userId, undefined, {
+        ftsSearchCandidateEnabled: true,
+        ftsSearchCandidates,
+      });
+
+      const result = await model.queryByKeyword('candidate');
+
+      expect(result.map(({ id }) => id)).toEqual([
+        'candidate-message-recent',
+        'candidate-message-old',
+      ]);
+      expect(ftsSearchCandidates).toHaveBeenCalledWith({
+        entity: 'messages',
+        filters: {},
+        pagination: {},
+        query: { fields: ['content'], text: 'candidate' },
+      });
+    });
+
+    it('hydrates candidate sets larger than the PostgreSQL bind-parameter limit', async () => {
+      await serverDB.insert(messages).values({
+        content: 'Matching message',
+        id: 'candidate-message-match',
+        role: 'user',
+        userId,
+      });
+      const candidates = Array.from({ length: 65_536 }, (_, index) => ({
+        id: `candidate-stale-${index}`,
+        score: 1,
+      }));
+      candidates.push({ id: 'candidate-message-match', score: 2 });
+      const model = new MessageModel(serverDB, userId, undefined, {
+        ftsSearchCandidateEnabled: true,
+        ftsSearchCandidates: vi.fn().mockResolvedValue({
+          candidates,
+          total: candidates.length,
+        }),
+      });
+
+      const result = await model.queryByKeyword('candidate');
+
+      expect(result.map(({ id }) => id)).toEqual(['candidate-message-match']);
     });
   });
 
@@ -3294,6 +3502,63 @@ describe('MessageModel Query Tests', () => {
       expect(await otherModel.getLatestSpineMessageId({ topicId: 'topic1' })).toBeUndefined();
       // unknown topic yields undefined
       expect(await messageModel.getLatestSpineMessageId({ topicId: 'nope' })).toBeUndefined();
+    });
+  });
+
+  describe('isMessageDescendantOf', () => {
+    it('distinguishes a newer callback sibling from an advancement of the active branch', async () => {
+      await serverDB.insert(sessions).values([{ id: 'session1', userId }]);
+      await serverDB.insert(topics).values([{ id: 'topic1', sessionId: 'session1', userId }]);
+      await serverDB.insert(messages).values([
+        { id: 'shell', userId, topicId: 'topic1', role: 'assistant', content: '' },
+        {
+          id: 'tool',
+          userId,
+          topicId: 'topic1',
+          role: 'tool',
+          content: 'result',
+          parentId: 'shell',
+        },
+        {
+          id: 'active',
+          userId,
+          topicId: 'topic1',
+          role: 'assistant',
+          content: 'main',
+          parentId: 'tool',
+        },
+        {
+          id: 'callback',
+          userId,
+          topicId: 'topic1',
+          role: 'taskCallback',
+          content: 'done',
+          parentId: 'shell',
+        },
+        {
+          id: 'callback-reply',
+          userId,
+          topicId: 'topic1',
+          role: 'assistant',
+          content: 'reactive',
+          parentId: 'callback',
+        },
+      ]);
+
+      expect(
+        await messageModel.isMessageDescendantOf({
+          ancestorId: 'active',
+          descendantId: 'callback-reply',
+          topicId: 'topic1',
+        }),
+      ).toBe(false);
+      expect(
+        await messageModel.isMessageDescendantOf({
+          ancestorId: 'callback',
+          descendantId: 'callback-reply',
+          topicId: 'topic1',
+        }),
+      ).toBe(true);
     });
   });
 

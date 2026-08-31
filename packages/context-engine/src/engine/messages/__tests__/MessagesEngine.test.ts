@@ -124,6 +124,89 @@ describe('MessagesEngine', () => {
       });
     });
 
+    it('should drop placeholder residue hidden inside tasks containers', async () => {
+      // TasksFlattenProcessor emits children as role='task' and
+      // TaskMessageProcessor converts them to assistant AFTER the flatten —
+      // the post-flatten placeholder pass must run after that conversion, or
+      // a "..." task child re-enters the payload as a trailing assistant.
+      const result = await new MessagesEngine(
+        createBasicParams({
+          messages: [
+            {
+              content: 'Hello',
+              createdAt: Date.now(),
+              id: 'msg-1',
+              role: 'user',
+              updatedAt: Date.now(),
+            } as UIChatMessage,
+            {
+              content: '',
+              createdAt: Date.now(),
+              id: 'tasks-1',
+              role: 'tasks',
+              tasks: [{ content: '...', id: 'task-child-1' }],
+              updatedAt: Date.now(),
+            } as unknown as UIChatMessage,
+          ],
+        }),
+      ).process();
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].role).toBe('user');
+    });
+
+    it('should not let placeholder-only containers consume history slots', async () => {
+      // History truncation counts each container as one group; a placeholder-
+      // only container must be dropped BEFORE truncation or it eats a slot and
+      // then vanishes at the flatten phase, losing a real history turn.
+      const now = Date.now();
+      const result = await new MessagesEngine(
+        createBasicParams({
+          enableHistoryCount: true,
+          historyCount: 3,
+          messages: [
+            {
+              content: 'real question',
+              createdAt: now,
+              id: 'u1',
+              role: 'user',
+              updatedAt: now,
+            } as UIChatMessage,
+            {
+              content: 'real answer',
+              createdAt: now,
+              id: 'a1',
+              role: 'assistant',
+              updatedAt: now,
+            } as UIChatMessage,
+            {
+              content: '',
+              createdAt: now,
+              id: 'tasks-1',
+              role: 'tasks',
+              tasks: [{ content: '...', id: 'task-child-1' }],
+              updatedAt: now,
+            } as unknown as UIChatMessage,
+            {
+              content: 'follow-up',
+              createdAt: now,
+              id: 'u2',
+              role: 'user',
+              updatedAt: now,
+            } as UIChatMessage,
+          ],
+        }),
+      ).process();
+
+      // Without the pre-truncation prune, the container occupies one of the 3
+      // slots and 'real question' falls out of the window.
+      expect(result.messages.map((m) => m.content)).toEqual([
+        'real question',
+        'real answer',
+        'follow-up',
+      ]);
+    });
+
     it('should process messages and return result with stats', async () => {
       const params = createBasicParams();
       const engine = new MessagesEngine(params);
@@ -1232,6 +1315,49 @@ Document content here.
       const result = await engine.process();
 
       expect(result.messages).toEqual([{ content: 'Question', role: 'user' }]);
+    });
+
+    it('should place additional contexts at the stable prefix and virtual tail', async () => {
+      const result = await new MessagesEngine(
+        createBasicParams({
+          additionalContexts: [
+            {
+              content: { text: 'Stable context.', type: 'text' },
+              placement: 'stable_prefix',
+              wrapper: { tag: 'stable_context' },
+            },
+            {
+              content: { text: 'Tail guidance.', type: 'text' },
+              placement: 'virtual_tail',
+              wrapper: { tag: 'tail_guidance' },
+            },
+          ],
+        }),
+      ).process();
+
+      expect(result.messages).toEqual([
+        {
+          content: '<stable_context>\nStable context.\n</stable_context>',
+          role: 'user',
+        },
+        { content: 'Hello', role: 'user' },
+        { content: 'Hi there!', role: 'assistant' },
+        {
+          content: '<tail_guidance>\nTail guidance.\n</tail_guidance>',
+          role: 'user',
+        },
+      ]);
+    });
+
+    it('should leave non-Graph output unchanged when Graph context is omitted', async () => {
+      const params = createBasicParams();
+      const baseline = await new MessagesEngine(params).process();
+      const withoutGraph = await new MessagesEngine({
+        ...params,
+        additionalContexts: undefined,
+      }).process();
+
+      expect(withoutGraph.messages).toEqual(baseline.messages);
     });
   });
 });

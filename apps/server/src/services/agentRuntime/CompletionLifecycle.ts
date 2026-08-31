@@ -1,9 +1,10 @@
 import { isParkedStatus } from '@lobechat/agent-runtime';
-import type { MessageContentPart } from '@lobechat/types';
+import { RequestTrigger } from '@lobechat/types';
 import { deserializeParts } from '@lobechat/utils';
 import { isRecord } from '@lobechat/utils/object';
 import debug from 'debug';
 
+import { notifyAgentInterventionRequired } from '@/business/server/agent-run/agentInterventionReview';
 import { notifyAgentRunCompleted } from '@/business/server/agent-run/notifyAgentRunCompleted';
 import {
   AgentOperationModel,
@@ -20,9 +21,11 @@ import { emitAgentSignalSourceEvent } from '@/server/services/agentSignal';
 import { toAgentSignalTraceEvents } from '@/server/services/agentSignal/observability/traceEvents';
 import { extractSelfIterationCompletionPayload } from '@/server/services/agentSignal/services/selfIteration/completion';
 import { instantiateVerifyPlanOnStart, runVerifyOnCompletion } from '@/server/services/verify';
+import { registerWorksForOperation } from '@/server/services/workRegistration';
+import { after } from '@/server/utils/scheduleAfterResponse';
 
-import { hookDispatcher, type SerializedHook } from './hooks';
-import { registerWorksForOperation } from './workRegistration';
+import { buildRuntimeInterventionNotification } from './agentInterventionNotification';
+import { CriticalHookDeliveryError, hookDispatcher, type SerializedHook } from './hooks';
 
 const log = debug('lobe-server:completion-lifecycle');
 
@@ -36,6 +39,33 @@ const log = debug('lobe-server:completion-lifecycle');
  */
 export const isSuccessLikeCompletionReason = (reason: string): boolean =>
   reason === 'done' || reason === 'max_steps' || reason === 'cost_limit';
+
+/**
+ * Triggers whose completion recalls the user with a push notification. Beyond
+ * plain chat: `Scheduled` is a user-deferred chat turn ("send this in 3
+ * hours"), and `Cron` is today stamped only by the rate-limit auto-resume of a
+ * user's own chat turn (see scheduledRunKinds) — both are exactly the "user
+ * walked away mid-conversation" case the recall exists for. Everything else
+ * (task runner, bots, evals, API, agent-signal self-iterations, …) is
+ * background work and stays silent.
+ */
+const USER_RECALLABLE_TRIGGERS = new Set<string>([
+  RequestTrigger.Chat,
+  RequestTrigger.Cron,
+  RequestTrigger.Scheduled,
+]);
+
+/**
+ * A parked human-approval run is not safely published until its generic Review
+ * batch is durable. Unlike ordinary notification fanout, this error must reach
+ * the queue/request boundary so the idempotent lifecycle delivery can retry.
+ */
+export class CriticalAgentInterventionPersistenceError extends Error {
+  constructor(operationId: string, cause: unknown) {
+    super(`Failed to persist intervention Review for parked operation ${operationId}`, { cause });
+    this.name = 'CriticalAgentInterventionPersistenceError';
+  }
+}
 
 type SignalEvent = { [key: string]: unknown; type: string };
 
@@ -73,6 +103,8 @@ export interface OperationCompletionInput {
   /** Executed model — the verify gate keys off `op.model`, so hetero backfills it. */
   model?: string | null;
   operationId: string;
+  /** Group orchestration role; members must not trigger user-facing completion recalls. */
+  orchestrationRole?: 'member' | 'supervisor';
   /** Executed provider — see {@link OperationCompletionInput.model}. */
   provider?: string | null;
   /** Serialized webhook hooks (queue mode); ignored in local in-memory mode. */
@@ -112,9 +144,9 @@ const toAgentSignalSnapshotEvents = (
  * events, dispatching `onComplete`/`onError` hooks, and writing the final
  * error back onto the assistant message row.
  *
- * All public methods are fire-and-forget: errors are logged but never thrown,
- * so the executor's terminal cleanup path (snapshot finalize, lock release)
- * always runs.
+ * Ordinary side-effect errors are logged and remain non-fatal. Critical
+ * no-fallback webhook failures are rethrown after terminal persistence so a
+ * queue execution can retry the control-flow handoff.
  */
 export class CompletionLifecycle {
   private readonly messageModel: MessageModel;
@@ -140,13 +172,16 @@ export class CompletionLifecycle {
 
   /**
    * Persist the initial `agent_operations` row when an operation is created.
-   * Fire-and-forget: a DB outage here must never block the runtime startup
-   * path — `dispatchHooks` will still finalize the row if one was written.
+   * Returns whether the row write succeeded so security-sensitive callers can
+   * require durable state before dispatch. Other runtime paths may preserve
+   * the historical non-blocking behavior by ignoring the result.
    */
-  async recordStart(params: RecordOperationStartParams): Promise<void> {
+  async recordStart(params: RecordOperationStartParams): Promise<boolean> {
+    let persisted = true;
     try {
       await this.agentOperationModel.recordStart(params);
     } catch (error) {
+      persisted = false;
       log('[%s] Failed to record operation start (non-fatal): %O', params.operationId, error);
     }
 
@@ -167,6 +202,66 @@ export class CompletionLifecycle {
           this.workspaceId,
         ),
       );
+    }
+
+    return persisted;
+  }
+
+  /**
+   * Publish a provider-neutral Review snapshot only after every referenced tool
+   * row can be read back as a member of this exact sealed parked batch. The
+   * business slot is idempotent by batch id; repeated lifecycle delivery is
+   * therefore safe, while a partial/mismatched write fails closed.
+   */
+  private async notifyPendingAgentIntervention(operationId: string, state: any): Promise<void> {
+    try {
+      const notification = await buildRuntimeInterventionNotification({
+        operationId,
+        state,
+        userId: state?.metadata?.userId || this.userId,
+        workspaceId: this.workspaceId,
+      });
+      if (!notification) return;
+
+      const persistedRows = await Promise.all(
+        notification.items.map(async (item, itemIndex) => {
+          if (item.sourceRef.type !== 'runtime') return;
+          const [message, plugin] = await Promise.all([
+            this.messageModel.findById(item.sourceRef.toolMessageId),
+            this.messageModel.findMessagePlugin(item.sourceRef.toolMessageId),
+          ]);
+          if (
+            !message ||
+            message.role !== 'tool' ||
+            message.parentId !== notification.context.assistantMessageId ||
+            message.topicId !== notification.context.topicId ||
+            !plugin ||
+            plugin.toolCallId !== item.sourceRef.toolCallId ||
+            plugin.intervention?.status !== 'pending' ||
+            plugin.intervention.operationId !== operationId ||
+            plugin.intervention.batchId !== notification.batch.id ||
+            plugin.intervention.stepIndex !== notification.batch.stepIndex ||
+            plugin.intervention.itemIndex !== itemIndex
+          ) {
+            return;
+          }
+          return true;
+        }),
+      );
+
+      if (persistedRows.some((persisted) => persisted !== true)) {
+        throw new Error(
+          'Cannot create intervention Review because the sealed pending batch is not durable',
+        );
+      }
+
+      // Contract boundary: Cloud resolves only after the generic batch is
+      // durable. Push/Live Activity fanout failures are handled inside the
+      // Cloud override and must not reject this call after persistence.
+      await notifyAgentInterventionRequired(notification);
+    } catch (error) {
+      if (error instanceof CriticalAgentInterventionPersistenceError) throw error;
+      throw new CriticalAgentInterventionPersistenceError(operationId, error);
     }
   }
 
@@ -202,7 +297,11 @@ export class CompletionLifecycle {
    * outage must never block hook dispatch or the executor's terminal
    * cleanup path.
    */
-  private async persistCompletion(operationId: string, state: any, reason: string): Promise<void> {
+  private async persistCompletion(
+    operationId: string,
+    state: any,
+    reason: string,
+  ): Promise<boolean> {
     const completionReason: any =
       reason === 'max_steps' ||
       reason === 'cost_limit' ||
@@ -248,7 +347,7 @@ export class CompletionLifecycle {
     };
 
     try {
-      await this.agentOperationModel.recordCompletion(operationId, {
+      const accepted = await this.agentOperationModel.recordCompletion(operationId, {
         completedAt,
         completionReason,
         cost: state?.cost ?? null,
@@ -279,6 +378,12 @@ export class CompletionLifecycle {
         // the scalar columns — the reporting surface — carry the whole tree.
         usage: state?.usage ?? null,
       });
+      if (!accepted) {
+        const operation = await this.agentOperationModel.findById(operationId);
+        // Preserve the historical best-effort behavior when no durable start
+        // row exists, but never let a conflicting terminal owner be replaced.
+        if (operation) return false;
+      }
     } catch (error) {
       log('[%s] Failed to persist operation completion (non-fatal): %O', operationId, error);
     }
@@ -298,6 +403,8 @@ export class CompletionLifecycle {
         log('[%s] Failed to recompute topic usage rollup (non-fatal): %O', operationId, error);
       }
     }
+
+    return true;
   }
 
   /** Best-effort child-usage rollup — a DB hiccup must not fail the completion write. */
@@ -349,8 +456,30 @@ export class CompletionLifecycle {
   async emitSignalEvents(operationId: string, state: any, reason: string): Promise<SignalEvent[]> {
     try {
       const { assistantMessageId, metadata } = this.buildLifecycleEvent(operationId, state, reason);
-      const selfIteration =
+      let selfIteration =
         reason === 'error' ? undefined : extractSelfIterationCompletionPayload(state);
+      if (reason !== 'error' && !selfIteration) {
+        try {
+          const operation = await this.agentOperationModel.findById(operationId);
+          const operationMetadata = operation?.metadata;
+          if (operationMetadata?.agentSignal) {
+            selfIteration = extractSelfIterationCompletionPayload({
+              ...state,
+              metadata: {
+                ...operationMetadata,
+                ...metadata,
+                userId: metadata?.userId || this.userId,
+              },
+            });
+          }
+        } catch (error) {
+          log(
+            '[completion-lifecycle] failed to hydrate Agent Signal marker op=%s: %O',
+            operationId,
+            error,
+          );
+        }
+      }
       if (reason !== 'error') {
         log(
           '[completion-lifecycle] emit agent.execution.completed op=%s userId=%s assistant=%s metaAssistant=%s selfIteration=%s',
@@ -495,6 +624,7 @@ export class CompletionLifecycle {
         _hooks: input.serializedHooks,
         agentId: input.agentId,
         assistantMessageId: input.assistantMessageId,
+        orchestrationRole: input.orchestrationRole,
         topicId: input.topicId,
         userId: input.userId ?? this.userId,
       },
@@ -503,6 +633,68 @@ export class CompletionLifecycle {
       stepCount: input.stepCount ?? null,
       usage: input.usage ?? undefined,
     };
+  }
+
+  /**
+   * The facts the recall gate needs. The trigger rides on `state.metadata` for
+   * in-process runs (the appContext spread); synthetic terminals
+   * ({@link buildStateFromInput}) have none, so fall back to the op row
+   * `recordStart` stamped — which also reveals `parentOperationId`, marking
+   * internal child runs (verifier/repair/evidence pass it without `isSubAgent`).
+   * `trigger: undefined` means neither source knows.
+   */
+  private async resolveRunRecallFacts(
+    operationId: string,
+    metadata: { trigger?: unknown } | undefined,
+  ): Promise<{ isChildRun: boolean; trigger: string | undefined }> {
+    if (typeof metadata?.trigger === 'string')
+      return { isChildRun: false, trigger: metadata.trigger };
+
+    try {
+      const operation = await this.agentOperationModel.findById(operationId);
+      return {
+        isChildRun: Boolean(operation?.parentOperationId),
+        trigger: operation?.trigger ?? undefined,
+      };
+    } catch (error) {
+      log('[%s] Failed to resolve run trigger from op row: %O', operationId, error);
+      return { isChildRun: false, trigger: undefined };
+    }
+  }
+
+  /**
+   * Push a completion recall — but only for runs the user is waiting on.
+   * Background executions (scheduled tasks, bots, evals, …) complete constantly
+   * and would spam the OS banner. An unknown trigger passes: human-approval
+   * chat continuations can reach here without one, and dropping a chat push is
+   * worse than a rare stray banner.
+   */
+  private async recallUserOnCompletion(
+    operationId: string,
+    event: { agentId?: string; duration?: number; lastAssistantContent?: string; topicId?: string },
+    metadata: { trigger?: unknown; userId?: string } | undefined,
+  ): Promise<void> {
+    const { isChildRun, trigger } = await this.resolveRunRecallFacts(operationId, metadata);
+    if (isChildRun) {
+      log('[%s] Skipping completion push for internal child run', operationId);
+      return;
+    }
+    if (trigger !== undefined && !USER_RECALLABLE_TRIGGERS.has(trigger)) {
+      log('[%s] Skipping completion push for non-interactive trigger %s', operationId, trigger);
+      return;
+    }
+
+    await notifyAgentRunCompleted({
+      agentId: event.agentId || undefined,
+      duration: event.duration,
+      lastAssistantContent: event.lastAssistantContent,
+      operationId,
+      topicId: event.topicId,
+      userId: metadata?.userId || this.userId,
+      // Personal runs leave this undefined ⇒ bare deep link; workspace
+      // runs carry the id so the business slot can slug-prefix the URL.
+      workspaceId: this.workspaceId,
+    });
   }
 
   /**
@@ -575,7 +767,7 @@ export class CompletionLifecycle {
    */
   async completeOperation(
     input: OperationCompletionInput,
-    reason: 'done' | 'error',
+    reason: 'done' | 'error' | 'interrupted',
     options?: CompleteOperationOptions,
   ): Promise<void> {
     await this.dispatchHooks(input.operationId, this.buildStateFromInput(input), reason, options);
@@ -585,7 +777,8 @@ export class CompletionLifecycle {
    * Dispatch `onComplete` (and `onError` for `reason='error'`) hooks via
    * the global `hookDispatcher`. On the error path, also writes the error
    * back onto the assistant message row so the frontend can render it.
-   * Fire-and-forget; always unregisters the operation from the dispatcher.
+   * Fire-and-forget; unregisters the operation after a settled lifecycle while
+   * preserving registrations across retryable critical delivery failures.
    */
   async dispatchHooks(
     operationId: string,
@@ -597,11 +790,13 @@ export class CompletionLifecycle {
     // status (the async-tool resume CAS reads it) but must NOT fire `onComplete`
     // or unregister hooks — the op resumes under this same id and reaches its
     // real terminal state later, which is when consumers should be notified.
-    // (`waiting_for_human` also resumes under the same operationId, but its
-    // park DOES fire `onComplete` — hook consumers surface the approval request
-    // as the run's outcome; the final completion re-dispatches with the
-    // serialized hooks carried on `metadata._hooks`.)
+    // `waiting_for_human` is different: the parked segment fires `onComplete`
+    // so hook consumers can surface the approval request. A winning decision
+    // schedules a fresh continuation operation and then retires this parked
+    // segment; the continuation receives the serialized hooks through
+    // `metadata._hooks`.
     const isAsyncToolPark = reason === 'waiting_for_async_tool';
+    let shouldRetainHooksForRetry = false;
 
     try {
       const { assistantMessageId, event, metadata } = this.buildLifecycleEvent(
@@ -612,7 +807,18 @@ export class CompletionLifecycle {
 
       // Finalize the agent_operations row before user hooks fire so
       // downstream consumers see the row in its terminal shape.
-      await this.persistCompletion(operationId, state, reason);
+      const completionAccepted = await this.persistCompletion(operationId, state, reason);
+      if (completionAccepted === false) {
+        log('[%s] Skipping hooks for an operation with a conflicting terminal owner', operationId);
+        return;
+      }
+
+      // At this point the parked operation state has been durably projected to
+      // agent_operations. Verify the tool rows independently before creating a
+      // durable Review so a partial batch can never reach notification UI.
+      if (reason === 'waiting_for_human') {
+        await this.notifyPendingAgentIntervention(operationId, state);
+      }
 
       if (isAsyncToolPark) return;
 
@@ -646,23 +852,15 @@ export class CompletionLifecycle {
       // `@/business` slot; the default implementation is a no-op. Sub-agent /
       // group-member completions are internal steps of a parent run, never a
       // user-facing recall — in-group members carry `orchestrationRole: 'member'`
-      // WITHOUT `isSubAgent` (see execAgentMember), so guard both.
+      // WITHOUT `isSubAgent` (see execAgentMember), so guard both. The
+      // remaining condition — only interactive chat runs recall the user —
+      // lives in recallUserOnCompletion.
       if (
         isSuccessLikeCompletionReason(reason) &&
         metadata?.isSubAgent !== true &&
         metadata?.orchestrationRole !== 'member'
       ) {
-        void notifyAgentRunCompleted({
-          agentId: event.agentId || undefined,
-          duration: event.duration,
-          lastAssistantContent: event.lastAssistantContent,
-          operationId,
-          topicId: event.topicId,
-          userId: metadata?.userId || this.userId,
-          // Personal runs leave this undefined ⇒ bare deep link; workspace
-          // runs carry the id so the business slot can slug-prefix the URL.
-          workspaceId: this.workspaceId,
-        }).catch((error) =>
+        void this.recallUserOnCompletion(operationId, event, metadata).catch((error) =>
           log('[%s] Completion notification failed (non-fatal): %O', operationId, error),
         );
       }
@@ -692,15 +890,24 @@ export class CompletionLifecycle {
           metadata?.assistantMessageId,
           metadata?.userId || this.userId,
         );
-        void runVerifyOnCompletion(
-          this.serverDB,
-          metadata?.userId || this.userId,
-          {
-            deliverable: event.lastAssistantContent ?? '',
-            goal,
-            operationId,
-          },
-          this.workspaceId,
+        // `after`, not a bare `void`: judging is minutes of LLM calls and the
+        // step handler must not wait for it, but a detached promise has nobody
+        // keeping it scheduled — on the serverless path the instance is free to
+        // stop running it the moment this response returns. That is not merely a
+        // lost verification: entering `verifying` is a durable write, so a run
+        // cut off mid-judge stays `verifying` forever. `after` hands the work to
+        // the host as post-response work instead (no-op fallback off Next).
+        after(() =>
+          runVerifyOnCompletion(
+            this.serverDB,
+            metadata?.userId || this.userId,
+            {
+              deliverable: event.lastAssistantContent ?? '',
+              goal,
+              operationId,
+            },
+            this.workspaceId,
+          ),
         );
       }
 
@@ -712,12 +919,11 @@ export class CompletionLifecycle {
       // reasons, not `done` alone: a run stopped by a step/cost cap still
       // produced its edits and persists as status='done'.
       //
-      // `waiting_for_human` deliberately does NOT register: the approval resume
-      // continues the SAME operationId (`processHumanIntervention` reschedules
-      // it), so pre-park edits are covered by the real terminal completion's
-      // scan. Registering at the park would persist `_fileWorksRegistered` into
-      // the park snapshot — skipping the terminal registration entirely — and
-      // freeze per-(op, file) versions at pre-approval content.
+      // `waiting_for_human` deliberately does NOT register: the park is not a
+      // successful deliverable boundary. The fresh approval continuation is
+      // built from the complete authoritative history and performs the real
+      // terminal scan. Registering here would freeze pre-approval file content
+      // as a completed Work before the user decision has run.
       if (isSuccessLikeCompletionReason(reason)) {
         await this.registerFileWorks(operationId, state);
       }
@@ -753,11 +959,22 @@ export class CompletionLifecycle {
         }
       }
     } catch (error) {
+      if (
+        error instanceof CriticalHookDeliveryError ||
+        error instanceof CriticalAgentInterventionPersistenceError
+      ) {
+        // A queue retry may run in this same process (local callback / warm
+        // worker). Keep the in-memory registration until that lifecycle really
+        // settles; queue mode can additionally reconstruct from metadata._hooks.
+        shouldRetainHooksForRetry = true;
+        throw error;
+      }
       log('[%s] Hook dispatch error (non-fatal): %O', operationId, error);
     } finally {
       // Keep hooks registered across an async-tool park so the eventual resume
-      // (same operationId) can still fire onComplete/onError.
-      if (!isAsyncToolPark) {
+      // (same operationId) can still fire onComplete/onError. Critical delivery
+      // failures likewise keep them until the provider redelivery settles.
+      if (!isAsyncToolPark && !shouldRetainHooksForRetry) {
         hookDispatcher.unregister(operationId);
         // The instantiation has settled (awaited above) or this op never opted in
         // — drop the entry so the map doesn't grow across the service's lifetime.
@@ -796,16 +1013,8 @@ export class CompletionLifecycle {
       // in DisplayContent) rather than sniffing the string, so a legitimate
       // plain-text reply that happens to be a JSON array is preserved as-is.
       // Extract only the text parts; an image-only row recovers nothing.
-      const isMultimodal =
-        (row?.metadata as { isMultimodal?: boolean } | null | undefined)?.isMultimodal === true;
-      const parts = isMultimodal ? deserializeParts(raw) : null;
-      const content = parts
-        ? parts
-            .filter((p): p is Extract<MessageContentPart, { type: 'text' }> => p.type === 'text')
-            .map((p) => p.text)
-            .join('')
-        : raw;
-      if (!content.trim()) return undefined;
+      const content = extractTextFromMessage(row);
+      if (!content?.trim()) return undefined;
 
       // console (not debug) so state/DB divergence stays visible in
       // production logs — the silent variant of this is what made
@@ -834,10 +1043,7 @@ export class CompletionLifecycle {
     // the turn has any text — so an image-only or tool-output final turn
     // doesn't fall through to an earlier assistant message and ship stale
     // text alongside the current attachments.
-    const lastAssistantMessage = messages
-      .slice()
-      .reverse()
-      .find((message) => message.role === 'assistant');
+    const lastAssistantMessage = findLastAssistantMessage(messages);
     const lastAssistantContent = lastAssistantMessage
       ? extractTextFromMessageContent(lastAssistantMessage.content)
       : undefined;
@@ -945,7 +1151,7 @@ const buildAttachmentFromUrl = (
  * Pull text out of a message's `content` field. Accepts both string and
  * OpenAI-style multimodal arrays `[{ type: 'text', text }, { type: 'image_url', image_url: { url } }]`.
  */
-const extractTextFromMessageContent = (content: unknown): string | undefined => {
+export const extractTextFromMessageContent = (content: unknown): string | undefined => {
   if (typeof content === 'string') return content || undefined;
   if (!Array.isArray(content)) return undefined;
   const parts: string[] = [];
@@ -962,6 +1168,23 @@ const extractTextFromMessageContent = (content: unknown): string | undefined => 
 };
 
 /**
+ * Extract text from either an in-memory message or a DB-rehydrated row.
+ * Persisted multimodal content is serialized, so only deserialize when the
+ * row's explicit metadata flag identifies that storage representation.
+ */
+export const extractTextFromMessage = (message: unknown): string | undefined => {
+  if (!isRecord(message)) return undefined;
+
+  const metadata = isRecord(message.metadata) ? message.metadata : undefined;
+  const content =
+    typeof message.content === 'string' && metadata?.isMultimodal === true
+      ? (deserializeParts(message.content) ?? message.content)
+      : message.content;
+
+  return extractTextFromMessageContent(content);
+};
+
+/**
  * Expand display-only assistant groups back into the assistant/tool sequence
  * expected by terminal lifecycle consumers.
  *
@@ -971,7 +1194,9 @@ const extractTextFromMessageContent = (content: unknown): string | undefined => 
  * the persisted leaf turns rather than that virtual wrapper, otherwise they
  * lose both the final text and the message id used by DB recovery.
  */
-const normalizeCompletionMessages = (messages: unknown[]): Record<PropertyKey, unknown>[] => {
+export const normalizeCompletionMessages = (
+  messages: unknown[],
+): Record<PropertyKey, unknown>[] => {
   const normalized: Record<PropertyKey, unknown>[] = [];
 
   for (const message of messages) {
@@ -1018,6 +1243,19 @@ const normalizeCompletionMessages = (messages: unknown[]): Record<PropertyKey, u
 
   return normalized;
 };
+
+/**
+ * Find the final assistant boundary after display-only groups have been
+ * normalized. Match by role rather than content so an empty/image-only final
+ * turn never falls through to stale text from an earlier assistant message.
+ */
+export const findLastAssistantMessage = (
+  messages: Record<PropertyKey, unknown>[],
+): Record<PropertyKey, unknown> | undefined =>
+  messages
+    .slice()
+    .reverse()
+    .find((message) => message.role === 'assistant');
 
 /**
  * Extract image/file parts from a message's `content` array. Each entry is

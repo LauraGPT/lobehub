@@ -30,6 +30,10 @@ export interface AIProviderState {
   hiddenBuiltinModels?: BuiltinModelIdentifier[];
   initAiProviderList: boolean;
   isInitAiProviderRuntimeState: boolean;
+  /** Retired model id → successor id, delivered with the provider runtime state. */
+  modelRedirects?: Record<string, string>;
+  /** Secret-free provider → supported local agent binding capabilities. */
+  providerBindingAgentTypes: Record<string, string[]>;
   providerSearchKeyword: string;
 }
 
@@ -42,5 +46,6 @@ export const initialAIProviderState: AIProviderState = {
   aiProviderRuntimeConfig: {},
   initAiProviderList: false,
   isInitAiProviderRuntimeState: false,
+  providerBindingAgentTypes: {},
   providerSearchKeyword: '',
 };

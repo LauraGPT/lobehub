@@ -1,6 +1,9 @@
 export type HomeChatContentState = 'empty' | 'error' | 'loading' | 'ready';
 
 interface ResolveHomeChatContentStateParams {
+  activityCount: number;
+  activityError: boolean;
+  activityResolved: boolean;
   authLoaded: boolean;
   hasError: boolean;
   isLogin: boolean;
@@ -9,6 +12,9 @@ interface ResolveHomeChatContentStateParams {
 }
 
 export const resolveHomeChatContentState = ({
+  activityCount,
+  activityError,
+  activityResolved,
   authLoaded,
   hasError,
   isLogin,
@@ -19,6 +25,8 @@ export const resolveHomeChatContentState = ({
   if (!isLogin) return 'empty';
   if (hasError && !recentsInit) return 'error';
   if (!recentsInit) return 'loading';
-  if (recentsCount === 0) return 'empty';
+  if (activityError) return 'ready';
+  if (recentsCount === 0 && activityCount === 0 && !activityResolved) return 'loading';
+  if (recentsCount === 0 && activityCount === 0) return 'empty';
   return 'ready';
 };

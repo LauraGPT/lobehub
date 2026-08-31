@@ -1,6 +1,7 @@
 'use client';
 
-import { Center, Flexbox, Icon, Text } from '@lobehub/ui';
+import { Center, Flexbox, Icon } from '@lobehub/ui';
+import { Text } from '@lobehub/ui/base-ui';
 import { cssVar } from 'antd-style';
 import { FolderPlusIcon } from 'lucide-react';
 import { memo, useEffect, useMemo } from 'react';
@@ -8,8 +9,8 @@ import { useTranslation } from 'react-i18next';
 import { VList } from 'virtua';
 
 import AsyncBoundary from '@/components/AsyncBoundary';
-import { useFolderPath } from '@/routes/(main)/resource/features/hooks/useFolderPath';
-import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
+import { useFolderPath } from '@/features/ResourceManager/hooks/useFolderPath';
+import { useResourceManagerStore } from '@/features/ResourceManager/store';
 import { useFileStore } from '@/store/file';
 import type { TreeItem } from '@/store/tree';
 import { useTreeStore } from '@/store/tree';
@@ -17,6 +18,7 @@ import { useTreeStore } from '@/store/tree';
 import AddButton from '../Header/AddButton';
 import { KnowledgeBaseListProvider } from '../KnowledgeBaseListProvider';
 import { HierarchyNode } from './HierarchyNode';
+import { resolveHierarchySelectedKey } from './selection';
 import TreeSkeleton from './TreeSkeleton';
 
 interface VisibleNode {
@@ -78,7 +80,7 @@ const LibraryHierarchy = memo(() => {
     return result;
   }, [children, expanded]);
 
-  const selectedKey = currentFolderSlug ?? null;
+  const selectedKey = resolveHierarchySelectedKey({ currentFolderSlug, currentViewItemId });
 
   const hasData = visibleNodes.length > 0;
   // The root fetch is in flight with nothing cached yet.

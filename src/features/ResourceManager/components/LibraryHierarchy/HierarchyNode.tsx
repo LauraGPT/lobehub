@@ -2,8 +2,9 @@
 
 import { CaretDownFilled, LoadingOutlined } from '@ant-design/icons';
 import { DERIVED_DOCUMENT_SOURCE_TYPE } from '@lobechat/const';
-import { ActionIcon, Block, Flexbox, Icon, stopPropagation } from '@lobehub/ui';
-import { App, Input } from 'antd';
+import { Block, Flexbox, Icon, stopPropagation } from '@lobehub/ui';
+import { ActionIcon, toast } from '@lobehub/ui/base-ui';
+import { Input } from 'antd';
 import { cx } from 'antd-style';
 import { FileText, FolderIcon, FolderOpenIcon } from 'lucide-react';
 import * as m from 'motion/react-m';
@@ -11,19 +12,20 @@ import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
 
 import FileIcon from '@/components/FileIcon';
 import { PAGE_FILE_TYPE } from '@/features/ResourceManager/constants';
-import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
-import { showContextMenu } from '@/libs/contextMenu';
 import {
   getTransparentDragImage,
   useDragActive,
   useSetCurrentDrag,
-} from '@/routes/(main)/resource/features/DndContextWrapper';
-import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
+} from '@/features/ResourceManager/DndContextWrapper';
+import { useResourceManagerStore } from '@/features/ResourceManager/store';
+import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
+import { showContextMenu } from '@/libs/contextMenu';
 import type { TreeItem } from '@/store/tree';
 import { useTreeStore } from '@/store/tree';
 
 import { useFileItemClick } from '../Explorer/hooks/useFileItemClick';
 import { useFileItemDropdown } from '../Explorer/ItemDropdown/useFileItemDropdown';
+import { isHierarchyNodeActive } from './selection';
 import { styles } from './styles';
 
 interface HierarchyNodeProps {
@@ -39,7 +41,6 @@ interface HierarchyNodeProps {
 export const HierarchyNode = memo<HierarchyNodeProps>(
   ({ item, level = 0, isExpanded, isLoading, onToggle, selectedKey, parentKey }) => {
     const navigate = useWorkspaceAwareNavigate();
-    const { message } = App.useApp();
 
     const [setMode, libraryId] = useResourceManagerStore((s) => [s.setMode, s.libraryId]);
 
@@ -49,7 +50,7 @@ export const HierarchyNode = memo<HierarchyNodeProps>(
     const [renamingValue, setRenamingValue] = useState(item.name);
     const inputRef = useRef<any>(null);
 
-    const { itemKey, isPage, emoji } = useMemo(() => {
+    const { isPage, emoji } = useMemo(() => {
       const lowerFileType = item.fileType?.toLowerCase();
       const lowerName = item.name?.toLowerCase();
       const isPDF = lowerFileType === 'pdf' || lowerName?.endsWith('.pdf');
@@ -69,9 +70,8 @@ export const HierarchyNode = memo<HierarchyNodeProps>(
       return {
         emoji: pageMatch ? item.metadata?.emoji : null,
         isPage: pageMatch,
-        itemKey: item.slug || item.id,
       };
-    }, [item.slug, item.id, item.fileType, item.sourceType, item.name, item.metadata?.emoji]);
+    }, [item.fileType, item.sourceType, item.name, item.metadata?.emoji]);
 
     const handleRenameStart = useCallback(() => {
       setIsRenaming(true);
@@ -84,7 +84,7 @@ export const HierarchyNode = memo<HierarchyNodeProps>(
 
     const handleRenameConfirm = useCallback(async () => {
       if (!renamingValue.trim()) {
-        message.error('Folder name cannot be empty');
+        toast.error('Folder name cannot be empty');
         return;
       }
 
@@ -95,13 +95,13 @@ export const HierarchyNode = memo<HierarchyNodeProps>(
 
       try {
         await renameItem(item.id, parentKey, renamingValue.trim());
-        message.success('Renamed successfully');
+        toast.success('Renamed successfully');
         setIsRenaming(false);
       } catch (error) {
         console.error('Rename error:', error);
-        message.error('Rename failed');
+        toast.error('Rename failed');
       }
-    }, [item.id, item.name, parentKey, renamingValue, renameItem, message]);
+    }, [item.id, item.name, parentKey, renamingValue, renameItem]);
 
     const handleRenameCancel = useCallback(() => {
       setIsRenaming(false);
@@ -109,11 +109,13 @@ export const HierarchyNode = memo<HierarchyNodeProps>(
     }, [item.name]);
 
     const { menuItems } = useFileItemDropdown({
+      fileId: item.fileId,
       fileType: item.fileType,
       filename: item.name,
       id: item.id,
       libraryId,
       onRenameStart: item.isFolder ? handleRenameStart : undefined,
+      size: item.size,
       sourceType: item.sourceType,
       url: item.url,
       userId: item.userId,
@@ -198,7 +200,7 @@ export const HierarchyNode = memo<HierarchyNodeProps>(
     );
 
     if (item.isFolder) {
-      const isActive = selectedKey === itemKey;
+      const isActive = isHierarchyNodeActive(item, selectedKey);
 
       const handleToggle = () => {
         onToggle(item.id);
@@ -302,7 +304,7 @@ export const HierarchyNode = memo<HierarchyNodeProps>(
     }
 
     // Render as file
-    const isActive = selectedKey === itemKey;
+    const isActive = isHierarchyNodeActive(item, selectedKey);
     return (
       <Flexbox gap={2}>
         <Block

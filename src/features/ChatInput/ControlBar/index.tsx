@@ -2,6 +2,7 @@ import { Flexbox, Skeleton } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
 import { memo } from 'react';
 
+import ChatInputCredits from '@/business/client/features/ChatInputCredits';
 import { useAgentStore } from '@/store/agent';
 import { agentByIdSelectors } from '@/store/agent/selectors';
 
@@ -15,7 +16,10 @@ import ModeSelector from './ModeSelector';
 import WorkspaceControls from './WorkspaceControls';
 
 const styles = createStaticStyles(({ css }) => ({
+  // `flex: none` keeps the row at 28px inside the column-flex composer; without
+  // it the bar shrinks to the compact chips' min-content height.
   bar: css`
+    flex: none;
     height: 28px;
     padding-block: 0;
     padding-inline: 4px;
@@ -71,6 +75,7 @@ const ControlBar = memo(() => {
       </Flexbox>
 
       <Flexbox horizontal align={'center'} className={styles.rightGroup} gap={4}>
+        <ChatInputCredits />
         {isAgentRuntimeMode && <ApprovalMode />}
         {showContextWindow && <ContextWindow />}
       </Flexbox>

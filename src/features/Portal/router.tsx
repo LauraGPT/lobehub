@@ -13,6 +13,8 @@ import { Artifacts } from './Artifacts';
 import Header from './components/Header';
 import { Document } from './Document';
 import { FilePreview } from './FilePreview';
+import { GoalMetric } from './GoalMetric';
+import { GoalNode } from './GoalNode';
 import { GroupThread } from './GroupThread';
 import { HomeBody, HomeTitle } from './Home';
 import { LocalFile } from './LocalFile';
@@ -21,6 +23,7 @@ import { Notebook } from './Notebook';
 import { Plugins } from './Plugins';
 import { TaskDetail } from './TaskDetail';
 import { Thread } from './Thread';
+import { Topic } from './Topic';
 import { TopicComments, TopicCommentThread } from './TopicComments';
 import { type PortalImpl } from './type';
 import { VerifyReport } from './VerifyReport';
@@ -39,11 +42,14 @@ const VIEW_COMPONENTS: Record<PortalViewType, PortalImpl> = {
   [PortalViewType.Document]: Document,
   [PortalViewType.Notebook]: Notebook,
   [PortalViewType.FilePreview]: FilePreview,
+  [PortalViewType.GoalMetric]: GoalMetric,
+  [PortalViewType.GoalNode]: GoalNode,
   [PortalViewType.LocalFile]: LocalFile,
   [PortalViewType.MessageDetail]: MessageDetail,
   [PortalViewType.ToolUI]: Plugins,
   [PortalViewType.TaskDetail]: TaskDetail,
   [PortalViewType.Thread]: Thread,
+  [PortalViewType.Topic]: Topic,
   [PortalViewType.TopicCommentThread]: TopicCommentThread,
   [PortalViewType.TopicComments]: TopicComments,
   [PortalViewType.GroupThread]: GroupThread,

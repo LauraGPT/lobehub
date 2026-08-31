@@ -16,6 +16,8 @@ export enum PortalViewType {
   Artifact = 'artifact',
   Document = 'document',
   FilePreview = 'filePreview',
+  GoalMetric = 'goalMetric',
+  GoalNode = 'goalNode',
   GroupThread = 'groupThread',
   Home = 'home',
   LocalFile = 'localFile',
@@ -24,6 +26,7 @@ export enum PortalViewType {
   TaskDetail = 'taskDetail',
   Thread = 'thread',
   ToolUI = 'toolUI',
+  Topic = 'topic',
   TopicComments = 'topicComments',
   TopicCommentThread = 'topicCommentThread',
   VerifyReport = 'verifyReport',
@@ -40,6 +43,13 @@ export interface OpenLocalFileParams {
   allowExternalFilePreview?: boolean;
   deviceId?: string;
   filePath: string;
+  /**
+   * Present when the file lives in the topic's cloud sandbox instead of a local
+   * or device filesystem: content is fetched live via the sandbox
+   * `readLocalFile` tool scoped to this topic, read-only, and unavailable once
+   * the sandbox is recycled.
+   */
+  sandboxTopicId?: string;
   workingDirectory: string;
 }
 
@@ -47,8 +57,18 @@ export interface OpenLocalFileEntry extends OpenLocalFileParams {
   id: string;
 }
 
+/**
+ * Which header metric of the goal detail page a drill-down inspects. Every
+ * value is derivable from the `goal.graph` snapshot the page already holds —
+ * none of these views require server work.
+ */
+export type GoalMetricKind =
+  'budget' | 'duration' | 'findings' | 'lifecycle' | 'liveness' | 'tasks';
+
 export type PortalViewData =
   | { type: PortalViewType.Home }
+  | { goalId: string; metric: GoalMetricKind; type: PortalViewType.GoalMetric }
+  | { goalId: string; nodeId: string; type: PortalViewType.GoalNode }
   | { acceptanceId: string; type: PortalViewType.Acceptance }
   | { acceptanceId: string; checkId: string; type: PortalViewType.AcceptanceCheck }
   | { agentId: string; type: PortalViewType.AgentDetail }
@@ -65,6 +85,7 @@ export type PortalViewData =
       type: PortalViewType.ToolUI;
     }
   | { startMessageId?: string; threadId?: string; type: PortalViewType.Thread }
+  | { topicId: string; type: PortalViewType.Topic }
   | { agentId: string; type: PortalViewType.GroupThread }
   | { taskId: string; type: PortalViewType.TaskDetail }
   | {

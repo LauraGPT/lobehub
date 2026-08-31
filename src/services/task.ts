@@ -11,26 +11,39 @@ class TaskService {
 
   list = async (params: {
     assigneeAgentId?: string;
+    automated?: boolean;
+    orderBy?: 'createdAt' | 'updatedAt';
     limit?: number;
     offset?: number;
     parentIdentifier?: string;
     parentTaskId?: string | null;
     priorities?: number[];
+    projectId?: string;
     statuses?: TaskStatus[];
     visibility?: 'private' | 'public';
   }) => lambdaClient.task.list.query(params);
 
   groupList = async (params: {
     assigneeAgentId?: string;
-    groups: Array<{
+    automated?: boolean;
+    excludeStatuses?: TaskStatus[];
+    groupBy?: 'assignee' | 'member' | 'priority';
+    groups?: Array<{
       key: string;
       limit?: number;
       offset?: number;
       statuses: string[];
     }>;
     parentTaskId?: string | null;
+    projectId?: string;
     visibility?: 'private' | 'public';
-  }) => lambdaClient.task.groupList.query(params);
+  }) =>
+    lambdaClient.task.groupList.query({
+      ...params,
+      // Keep `assignee`'s released hybrid API semantics for older clients.
+      // This UI's Agent board deliberately opts into the agent-only contract.
+      groupBy: params.groupBy === 'assignee' ? 'agent' : params.groupBy,
+    });
 
   getSubtasks = async (id: string) => lambdaClient.task.getSubtasks.query({ id });
 
@@ -54,14 +67,17 @@ class TaskService {
     assigneeAgentId?: string;
     assigneeUserId?: string;
     automationMode?: TaskAutomationMode;
+    config?: Record<string, unknown>;
     createdByAgentId?: string;
     description?: string;
     editorData?: unknown;
+    /** Bind a goal entity (`goals` row) to the created task. */
     identifierPrefix?: string;
     instruction: string;
     name?: string;
     parentTaskId?: string;
     priority?: number;
+    projectId?: string;
     schedulePattern?: string;
     scheduleTimezone?: string;
     visibility?: 'private' | 'public';

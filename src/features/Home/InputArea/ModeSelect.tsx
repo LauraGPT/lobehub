@@ -1,7 +1,7 @@
 import { Flexbox, Icon } from '@lobehub/ui';
 import { Button, Popover } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar, cx } from 'antd-style';
-import { ChevronDownIcon, InfinityIcon, MessageCircleIcon } from 'lucide-react';
+import { ChevronDownIcon, InfinityIcon, ListTodoIcon } from 'lucide-react';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -94,13 +94,13 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
 }));
 
-/**
- * The two modes are the runtime's existing chat / agent split, so they borrow
- * that copy rather than restating it.
- */
+// Task mode carries the same glyph as the sidebar's Tasks entry: picking it
+// here and opening that page are two doors onto one thing, so they must not
+// look like two different features. Agent mode keeps the infinity mark, which
+// is the product's own sign for the open-ended, keeps-going side of the pair.
 const MODES = [
-  { descKey: 'chatMode.chatDesc', icon: MessageCircleIcon, key: 'chat' },
-  { descKey: 'chatMode.agentDesc', icon: InfinityIcon, key: 'task' },
+  { icon: InfinityIcon, key: 'chat' },
+  { icon: ListTodoIcon, key: 'task' },
 ] as const;
 
 interface ModeSelectProps {
@@ -132,7 +132,7 @@ const ModeSelect = memo<ModeSelectProps>(({ onChange, value }) => {
 
   const content = (
     <Flexbox gap={4} role={'menu'} style={{ maxWidth: 320, minWidth: 280 }}>
-      {MODES.map(({ descKey, icon, key }) => {
+      {MODES.map(({ icon, key }) => {
         const disabled = isHomeModeDisabled(key, canCreateContent);
 
         return (
@@ -158,7 +158,9 @@ const ModeSelect = memo<ModeSelectProps>(({ onChange, value }) => {
               </Flexbox>
               <Flexbox className={styles.optionText} flex={1}>
                 <div className={styles.optionTitle}>{t(`dashboard.mode.${key}`)}</div>
-                <div className={styles.optionDesc}>{tChat(descKey)}</div>
+                <div className={styles.optionDesc}>
+                  {key === 'chat' ? tChat('chatMode.agentDesc') : t('dashboard.modeDesc.task')}
+                </div>
               </Flexbox>
             </Flexbox>
           </Button>

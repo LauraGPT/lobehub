@@ -6,6 +6,7 @@ import type { LobeChatDatabase } from '@/database/type';
 
 import { AcceptanceService } from './acceptanceService';
 import { VerifyPlanGeneratorService } from './planGenerator';
+import { resolveTaskAcceptance } from './taskAcceptance';
 
 const log = debug('lobe-server:verify-plan-instantiation');
 
@@ -18,9 +19,9 @@ export interface InstantiateVerifyPlanParams {
  * Auto-instantiate + auto-confirm a verify plan for a task-bound operation at run
  * start, so the completion-time gate (`runVerifyOnCompletion`) actually fires.
  *
- * Without this, a task's `TaskVerifyConfig` (rubric / criteria) is never turned
- * into a plan, so verify silently no-ops. We resolve the task's verify config
- * (with subtask inheritance), materialize the rubric + ad-hoc criteria into a
+ * Without this, a task's Acceptance policy (rubric / criteria) is never turned
+ * into a plan, so verify silently no-ops. We resolve the Task's Acceptance and
+ * materialize the rubric + ad-hoc criteria into a
  * plan (no AI generation — the task already picked its criteria), and confirm it
  * immediately (task scenario doesn't show a "confirm plan" step).
  *
@@ -35,19 +36,22 @@ export const instantiateVerifyPlanOnStart = async (
 ): Promise<void> => {
   try {
     const taskModel = new TaskModel(db, userId, workspaceId);
-    const verifyConfig = await taskModel.resolveVerifyConfig(params.taskId);
+
+    const resolvedAcceptance = await resolveTaskAcceptance(db, userId, params.taskId, workspaceId);
+    if (!resolvedAcceptance) return;
+    const { acceptance, config: verifyConfig, requirement } = resolvedAcceptance;
 
     // Opt-in to verify, then pick the plan shape:
     //  - rubric / ad-hoc criteria  → decomposed multi-item plan (existing path)
     //  - else explicitly enabled OR a one-sentence acceptance requirement set
     //    → coarse single holistic agent check
     //  - no signal at all          → verify stays off
-    if (!verifyConfig || verifyConfig.enabled === false) return;
+    if (verifyConfig.enabled === false) return;
     const hasCriteria = Boolean(
       verifyConfig.verifyRubricId || verifyConfig.verifyCriteriaIds?.length,
     );
     const holistic =
-      !hasCriteria && (verifyConfig.enabled === true || Boolean(verifyConfig.requirement?.trim()));
+      !hasCriteria && (verifyConfig.enabled === true || Boolean(requirement?.trim()));
     if (!hasCriteria && !holistic) return;
 
     const runModel = new VerifyRunModel(db, userId, workspaceId);
@@ -66,7 +70,7 @@ export const instantiateVerifyPlanOnStart = async (
       // Fall back to a single agent-type holistic check when nothing decomposed.
       holisticFallback: holistic,
       operationId: params.operationId,
-      requirement: verifyConfig.requirement,
+      requirement,
       verifyCriteriaIds: verifyConfig.verifyCriteriaIds,
       verifyRubricId: verifyConfig.verifyRubricId,
     });
@@ -75,7 +79,7 @@ export const instantiateVerifyPlanOnStart = async (
     // so the completion gate treats it as ready instead of a pending draft.
     const run = await runModel.findByOperation(params.operationId);
     if (run?.plan?.length) {
-      // Carry the task's repair/re-run cap (TaskVerifyConfig.maxIterations) onto
+      // Carry the Acceptance repair/re-run cap onto
       // the run so auto-repair honors it. Without this the repair path falls back
       // to the source rubric's config or the default, dropping the task cap for
       // ad-hoc-criteria or per-task-override tasks.
@@ -89,15 +93,7 @@ export const instantiateVerifyPlanOnStart = async (
       // planned/verifying/repairing progress instead of waiting for an external
       // ingest command to create the aggregate after verification has finished.
       const acceptanceService = new AcceptanceService(db, userId, workspaceId);
-      const acceptance = await acceptanceService.ensureForSubject('task', params.taskId, {
-        requirement: verifyConfig.requirement?.trim() || goal,
-      });
-      // Task verify config is the source that produced this plan. Keep the
-      // aggregate goal in lockstep when a later run changes that source.
-      await acceptanceService.acceptanceModel.update(acceptance.id, {
-        requirement: verifyConfig.requirement?.trim() || goal,
-      });
-      await acceptanceService.attachRun(run.id, acceptance.id);
+      await acceptanceService.attachPolicyRun(run.id, acceptance.id);
 
       log(
         'instantiated + confirmed verify plan for op %s (%d items), acceptance %s',

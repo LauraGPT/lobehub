@@ -3,14 +3,14 @@
 import type { IEditor } from '@lobehub/editor';
 import { ReactMentionPlugin, ReactTablePlugin, ReactToolbarPlugin } from '@lobehub/editor';
 import { Editor } from '@lobehub/editor/react';
-import { ActionIcon, Flexbox } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
+import { ActionIcon, toast } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
 import isEqual from 'fast-deep-equal';
 import { CodeXmlIcon, LetterTextIcon } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { message } from '@/components/AntdStaticMethods';
 import CodeEditorPane from '@/components/CodeEditorPane';
 import AutoSaveHint from '@/components/Editor/AutoSaveHint';
 import InfoTooltip from '@/components/InfoTooltip';
@@ -38,13 +38,6 @@ const styles = createStaticStyles(({ css }) => ({
     border-radius: ${cssVar.borderRadiusLG};
 
     background: ${cssVar.colorBgContainer};
-  `,
-  header: css`
-    max-width: 820px;
-  `,
-  modeSwitch: css`
-    padding-inline-start: 4px;
-    border-inline-start: 1px solid ${cssVar.colorBorderSecondary};
   `,
   root: css`
     padding-block-end: 16px;
@@ -196,7 +189,7 @@ const AgentEditorCanvas = memo<AgentEditorCanvasProps>(({ agentId }) => {
    *   raw Markdown with the editor's normalized rendering — and the next source-mode
    *   keystroke would persist that normalized text. Nullish (no persisted source)
    *   falls back to the editor's own, normalized Markdown.
-   *   See LOBE-12367 / lobehub/lobehub#17580.
+   *   See source mode toggle in agent profile core instructions editor / lobehub/lobehub#17580.
    */
   const setProgrammaticDocument = useCallback(
     (
@@ -434,7 +427,7 @@ const AgentEditorCanvas = memo<AgentEditorCanvasProps>(({ agentId }) => {
 
   return (
     <Flexbox className={styles.root} gap={16}>
-      <Flexbox className={styles.header} gap={4}>
+      <Flexbox gap={4}>
         <Flexbox horizontal align={'center'} distribution={'space-between'} gap={8}>
           <Flexbox horizontal align={'center'} gap={6}>
             <div className={styles.title}>{t('settingAgent.prompt.title')}</div>
@@ -452,7 +445,15 @@ const AgentEditorCanvas = memo<AgentEditorCanvasProps>(({ agentId }) => {
                 onRetry={editable ? () => void retryPromptSave() : undefined}
               />
             )}
-            <Flexbox horizontal className={styles.modeSwitch} gap={2}>
+            <Flexbox
+              horizontal
+              gap={2}
+              // The profile content wrapper focuses the prompt editor on any
+              // bubbled click, and Lexical's focus() moves the caret to the
+              // document end when there is no selection — scrolling the page to
+              // the bottom. Toggling the view mode must not move the caret.
+              onClick={(e) => e.stopPropagation()}
+            >
               <ActionIcon
                 active={activeEditorMode === 'visual'}
                 aria-label={t('settingAgent.prompt.mode.visual')}
@@ -545,7 +546,7 @@ const EditorCanvas = memo(() => {
       if (!agentId) return;
       void flushSave(agentId).then(() => {
         if (storeApi.getState().promptSaveStatus === 'failed') {
-          message.error(t('saveAgentConfigFail', { ns: 'common' }));
+          toast.error(t('saveAgentConfigFail', { ns: 'common' }));
         }
       });
     },

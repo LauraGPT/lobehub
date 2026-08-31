@@ -2,8 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserModel } from '@/database/models/user';
-import { SearchRepo } from '@/database/repositories/search';
 import { DiscoverService } from '@/server/services/discover';
+import { createFtsSearchRepo } from '@/server/services/ftsSearch';
 
 import { searchRouter } from '../search';
 
@@ -11,9 +11,7 @@ vi.mock('@/database/core/db-adaptor', () => ({
   getServerDB: vi.fn().mockResolvedValue({}),
 }));
 
-vi.mock('@/database/repositories/search', () => ({
-  SearchRepo: vi.fn(),
-}));
+vi.mock('@/server/services/ftsSearch', () => ({ createFtsSearchRepo: vi.fn() }));
 
 vi.mock('@/database/models/user', () => ({
   UserModel: Object.assign(vi.fn(), { findById: vi.fn() }),
@@ -42,7 +40,7 @@ describe('searchRouter', () => {
       fullName: 'Test User',
     } as any);
     vi.mocked(UserModel).mockImplementation(() => ({ getUserSettings }) as any);
-    vi.mocked(SearchRepo).mockImplementation(() => ({ search }) as unknown as SearchRepo);
+    vi.mocked(createFtsSearchRepo).mockResolvedValue({ search } as any);
     vi.mocked(DiscoverService).mockImplementation(
       () => ({ getAssistantList, getMcpList, getPluginList }) as unknown as DiscoverService,
     );
@@ -82,6 +80,7 @@ describe('searchRouter', () => {
       },
       { throwOnError: true },
     );
+    expect(createFtsSearchRepo).not.toHaveBeenCalled();
   });
 
   it('does not load market identity for a local-only search', async () => {
@@ -90,12 +89,33 @@ describe('searchRouter', () => {
     const result = await caller.query({ query: 'local message', type: 'message' });
 
     expect(result).toEqual([]);
-    expect(search).toHaveBeenCalledWith({ query: 'local message', type: 'message' });
+    expect(search).toHaveBeenCalledWith({
+      excludeKnowledgeBaseIds: [],
+      query: 'local message',
+      type: 'message',
+    });
+    expect(createFtsSearchRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'test-user', workspaceId: undefined }),
+    );
     expect(UserModel.findById).not.toHaveBeenCalled();
     expect(getUserSettings).not.toHaveBeenCalled();
   });
 
-  it('preserves global search results when the community agent search rejects', async () => {
+  it('keeps untyped searches including the marketplace by default', async () => {
+    const localResult = { id: 'local-agent', title: 'Local Agent', type: 'agent' };
+    search.mockResolvedValue([localResult]);
+    getAssistantList.mockResolvedValue({ items: [] });
+    const caller = searchRouter.createCaller({ userId: 'test-user' } as any);
+
+    const result = await caller.query({ query: 'assistant' });
+
+    expect(result).toEqual([localResult]);
+    expect(getAssistantList).toHaveBeenCalled();
+    expect(getMcpList).toHaveBeenCalled();
+    expect(getPluginList).toHaveBeenCalled();
+  });
+
+  it('preserves untyped search results when the community agent search rejects', async () => {
     const localResult = { id: 'local-agent', title: 'Local Agent', type: 'agent' };
     search.mockResolvedValue([localResult]);
     getAssistantList.mockRejectedValue(new Error('Market unavailable'));
@@ -113,6 +133,21 @@ describe('searchRouter', () => {
       },
       { throwOnError: false },
     );
+  });
+
+  it('keeps the opted-out aggregate search DB-only: no marketplace calls, no market identity', async () => {
+    const localResult = { id: 'local-agent', title: 'Local Agent', type: 'agent' };
+    search.mockResolvedValue([localResult]);
+    const caller = searchRouter.createCaller({ userId: 'test-user' } as any);
+
+    const result = await caller.query({ includeMarketplace: false, query: 'assistant' });
+
+    expect(result).toEqual([localResult]);
+    expect(getAssistantList).not.toHaveBeenCalled();
+    expect(getMcpList).not.toHaveBeenCalled();
+    expect(getPluginList).not.toHaveBeenCalled();
+    expect(UserModel.findById).not.toHaveBeenCalled();
+    expect(getUserSettings).not.toHaveBeenCalled();
   });
 
   it('returns a typed error when the community agent market search fails', async () => {

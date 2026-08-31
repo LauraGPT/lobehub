@@ -1,12 +1,18 @@
 import {
   ChartColumnBigIcon,
   FileUserIcon,
+  GraduationCapIcon,
   MessageSquare,
   MessagesSquareIcon,
   RadioTowerIcon,
+  UsersIcon,
 } from 'lucide-react';
 import { lazy } from 'react';
 
+import ConversationLayoutSkeleton from '@/components/Skeleton/Conversation/Layout';
+import ProfileSkeleton from '@/components/Skeleton/Profile';
+import { createSurfaceSkeleton } from '@/components/Skeleton/Surface';
+import TopicsSkeleton from '@/components/Skeleton/Topics';
 import { routeMeta } from '@/spa/router/routeMeta';
 
 const AgentDynamicMeta = lazy(() => import('@/features/RouteMeta/AgentDynamicMeta'));
@@ -25,38 +31,67 @@ const ChannelDynamicMeta = lazy(() =>
     default: module.ChannelDynamicMeta,
   })),
 );
-const StatsDynamicMeta = lazy(() =>
+const StatisticsDynamicMeta = lazy(() =>
   import('@/features/RouteMeta/AgentDynamicMeta').then((module) => ({
-    default: module.StatsDynamicMeta,
+    default: module.StatisticsDynamicMeta,
+  })),
+);
+const SelfLearningDynamicMeta = lazy(() =>
+  import('@/features/RouteMeta/AgentDynamicMeta').then((module) => ({
+    default: module.SelfLearningDynamicMeta,
+  })),
+);
+const PermissionDynamicMeta = lazy(() =>
+  import('@/features/RouteMeta/AgentDynamicMeta').then((module) => ({
+    default: module.PermissionDynamicMeta,
   })),
 );
 
 export const agentRouteMeta = routeMeta({
   DynamicMeta: AgentDynamicMeta,
   icon: MessageSquare,
+  Skeleton: ConversationLayoutSkeleton,
   titleKey: 'navigation.chat',
 });
 
 export const topicsRouteMeta = routeMeta({
   DynamicMeta: TopicsDynamicMeta,
   icon: MessagesSquareIcon,
+  Skeleton: TopicsSkeleton,
   titleKey: 'navigation.topics',
 });
 
 export const agentProfileRouteMeta = routeMeta({
   DynamicMeta: ProfileDynamicMeta,
   icon: FileUserIcon,
+  Skeleton: ProfileSkeleton,
   titleKey: 'navigation.profile',
 });
 
 export const agentChannelRouteMeta = routeMeta({
   DynamicMeta: ChannelDynamicMeta,
   icon: RadioTowerIcon,
+  Skeleton: createSurfaceSkeleton('grid'),
   titleKey: 'navigation.channels',
 });
 
-export const agentStatsRouteMeta = routeMeta({
-  DynamicMeta: StatsDynamicMeta,
+export const agentStatisticsRouteMeta = routeMeta({
+  DynamicMeta: StatisticsDynamicMeta,
   icon: ChartColumnBigIcon,
+  Skeleton: createSurfaceSkeleton('grid'),
   titleKey: 'navigation.stats',
+});
+
+export const agentSelfLearningRouteMeta = routeMeta({
+  DynamicMeta: SelfLearningDynamicMeta,
+  icon: GraduationCapIcon,
+  Skeleton: createSurfaceSkeleton('list'),
+  titleKey: 'navigation.selfLearning',
+});
+
+export const agentPermissionRouteMeta = routeMeta({
+  DynamicMeta: PermissionDynamicMeta,
+  icon: UsersIcon,
+  Skeleton: createSurfaceSkeleton('form'),
+  titleKey: 'navigation.permission',
 });

@@ -10,6 +10,7 @@ import {
   type GatewayMcpParams,
 } from '@lobechat/device-gateway-client';
 import type { HeterogeneousAgentType } from '@lobechat/heterogeneous-agents';
+import type { ClaudeCodeQuotaSnapshot } from '@lobechat/heterogeneous-agents/quota';
 import type {
   DeviceGitAddWorktreeResult,
   DeviceGitAheadBehind,
@@ -352,11 +353,12 @@ export class DeviceGateway {
   }
 
   /**
-   * Generic helper for the granular git read RPCs (branch / PR / working-tree /
-   * ahead-behind). Returns `undefined` when the gateway is unconfigured, the
-   * device is offline, or the call fails — callers treat that as "unknown".
+   * Generic helper for granular device read RPCs (git branch / PR /
+   * working-tree / ahead-behind / Claude quota). Returns `undefined` when the
+   * gateway is unconfigured, the device is offline, or the call fails —
+   * callers treat that as "unknown".
    */
-  private async invokeGitRead<T>(
+  private async invokeDeviceRead<T>(
     method: string,
     params: { deviceId: string; timeout?: number; userId: string; workspaceId?: string },
     rpcParams: Record<string, unknown>,
@@ -385,7 +387,9 @@ export class DeviceGateway {
 
   /** Branch name + detached flag for a directory on a remote device. */
   gitBranch(params: { deviceId: string; path: string; userId: string; workspaceId?: string }) {
-    return this.invokeGitRead<DeviceGitBranchInfo>('getGitBranch', params, { path: params.path });
+    return this.invokeDeviceRead<DeviceGitBranchInfo>('getGitBranch', params, {
+      path: params.path,
+    });
   }
 
   /** The GitHub PR linked to a branch in a directory on a remote device. */
@@ -397,7 +401,7 @@ export class DeviceGateway {
     userId: string;
     workspaceId?: string;
   }) {
-    return this.invokeGitRead<DeviceGitLinkedPullRequestResult>('getLinkedPullRequest', params, {
+    return this.invokeDeviceRead<DeviceGitLinkedPullRequestResult>('getLinkedPullRequest', params, {
       branch: params.branch,
       path: params.path,
       pullRequestNumber: params.pullRequestNumber,
@@ -411,15 +415,34 @@ export class DeviceGateway {
     userId: string;
     workspaceId?: string;
   }) {
-    return this.invokeGitRead<DeviceGitWorkingTreeStatus>('getGitWorkingTreeStatus', params, {
+    return this.invokeDeviceRead<DeviceGitWorkingTreeStatus>('getGitWorkingTreeStatus', params, {
       path: params.path,
     });
   }
 
   /** Ahead/behind commit counts for a directory on a remote device. */
   gitAheadBehind(params: { deviceId: string; path: string; userId: string; workspaceId?: string }) {
-    return this.invokeGitRead<DeviceGitAheadBehind>('getGitAheadBehind', params, {
+    return this.invokeDeviceRead<DeviceGitAheadBehind>('getGitAheadBehind', params, {
       path: params.path,
+    });
+  }
+
+  /**
+   * Claude Code subscription quota of the login on a remote device. The device
+   * samples the Anthropic usage API with its local credentials — same sampler
+   * as the desktop IPC path. `undefined` also covers older device clients that
+   * don't know this RPC yet.
+   */
+  claudeCodeQuota(params: {
+    deviceId: string;
+    env?: Record<string, string>;
+    force?: boolean;
+    userId: string;
+    workspaceId?: string;
+  }) {
+    return this.invokeDeviceRead<ClaudeCodeQuotaSnapshot>('getClaudeCodeQuota', params, {
+      env: params.env,
+      force: params.force,
     });
   }
 
@@ -430,23 +453,34 @@ export class DeviceGateway {
     userId: string;
     workspaceId?: string;
   }) {
-    return this.invokeGitRead<DeviceGitWorktreeListItem[]>('listGitWorktrees', params, {
+    return this.invokeDeviceRead<DeviceGitWorktreeListItem[]>('listGitWorktrees', params, {
       path: params.path,
     });
   }
 
   /** Query a heterogeneous CLI's model catalog on the device that will execute it. */
   async listHeterogeneousAgentModels(params: {
+    args?: string[];
     command?: string;
     cwd?: string;
     deviceId: string;
     env?: Record<string, string>;
     timeout?: number;
-    type: 'opencode';
+    type: 'codebuddy' | 'cursor' | 'droid' | 'grok-build' | 'opencode' | 'pi' | 'qoder' | 'trae';
     userId: string;
     workspaceId?: string;
   }): Promise<HeterogeneousAgentModelCatalog> {
-    const { command, cwd, deviceId, env, timeout = 20_000, type, userId, workspaceId } = params;
+    const {
+      args,
+      command,
+      cwd,
+      deviceId,
+      env,
+      timeout = 20_000,
+      type,
+      userId,
+      workspaceId,
+    } = params;
     const client = this.getClient();
     const unavailable = (message: string): HeterogeneousAgentModelCatalog => ({
       error: { code: 'device_unavailable', message },
@@ -460,7 +494,7 @@ export class DeviceGateway {
         { deviceId, timeout, userId, workspaceId },
         {
           method: 'listHeterogeneousAgentModels',
-          params: { command, cwd, env, type },
+          params: { args, command, cwd, env, type },
         },
       );
 
@@ -898,7 +932,9 @@ export class DeviceGateway {
    * compact tree subset with ancestor directories.
    */
   async searchProjectFiles(params: {
+    changedOnly?: boolean;
     deviceId: string;
+    excludeIgnored?: boolean;
     limit?: number;
     query: string;
     scope: string;
@@ -906,14 +942,27 @@ export class DeviceGateway {
     userId: string;
     workspaceId?: string;
   }): Promise<DeviceProjectFileSearchResult | undefined> {
-    const { userId, deviceId, limit, query, scope, timeout = 30_000, workspaceId } = params;
+    const {
+      changedOnly,
+      userId,
+      deviceId,
+      excludeIgnored,
+      limit,
+      query,
+      scope,
+      timeout = 30_000,
+      workspaceId,
+    } = params;
     const client = this.getClient();
     if (!client) return undefined;
 
     try {
       const result = await client.invokeRpc<DeviceProjectFileSearchResult>(
         { deviceId, timeout, userId, workspaceId },
-        { method: 'searchProjectFiles', params: { limit, query, scope } },
+        {
+          method: 'searchProjectFiles',
+          params: { changedOnly, excludeIgnored, limit, query, scope },
+        },
       );
 
       if (!result.success || !result.data) {
@@ -1239,6 +1288,7 @@ export class DeviceGateway {
 
   async dispatchAgentRun(params: {
     agentType: HeterogeneousAgentType;
+    assistantMessageId: string;
     /** Resolved `lh hetero exec` wrapper args. */
     args?: string[];
     cwd?: string;
@@ -1248,11 +1298,14 @@ export class DeviceGateway {
     jwt: string;
     operationId: string;
     prompt: string;
+    resumeFallbackSystemContext?: string;
     resumeSessionId?: string;
     systemContext?: string;
     topicId: string;
     userId: string;
     workspaceId?: string;
+    /** Topic/run workspace forwarded to the device for hetero ingest. */
+    ingestWorkspaceId?: string;
   }): Promise<{ error?: string; success: boolean }> {
     const client = this.getClient();
     if (!client) return { error: 'GATEWAY_NOT_CONFIGURED', success: false };

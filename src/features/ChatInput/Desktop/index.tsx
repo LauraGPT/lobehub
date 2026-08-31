@@ -2,7 +2,8 @@
 
 import { type ChatInputProps } from '@lobehub/editor/react';
 import { ChatInput, ChatInputActionBar } from '@lobehub/editor/react';
-import { Center, Flexbox, Skeleton, Text } from '@lobehub/ui';
+import { Center, Flexbox, Skeleton } from '@lobehub/ui';
+import { Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cx } from 'antd-style';
 import { type ReactNode, use } from 'react';
 import { memo, useEffect } from 'react';
@@ -10,8 +11,9 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import ChatInputNotice from '@/features/ChatInput/ChatInputNotice';
+import ComposerExpandButton from '@/features/ChatInput/components/ComposerExpandButton';
 import { useChatInputStore } from '@/features/ChatInput/store';
-import { LayoutContainerContext } from '@/routes/(main)/_layout/DesktopLayoutContainer/LayoutContainerContext';
+import { LayoutContainerContext } from '@/features/DesktopLayoutContainer/LayoutContainerContext';
 import { useChatStore } from '@/store/chat';
 import { chatSelectors } from '@/store/chat/selectors';
 import { fileChatSelectors, useFileStore } from '@/store/file';
@@ -135,7 +137,10 @@ const DesktopChatInput = memo<DesktopChatInputProps>(
       systemStatusSelectors.chatInputHeight(s),
       s.updateSystemStatus,
     ]);
-    const hasContextSelections = useFileStore(fileChatSelectors.chatContextSelectionHasItem);
+    const contextSelectionKey = useChatInputStore((s) => s.contextSelectionKey);
+    const hasContextSelections = useFileStore(
+      fileChatSelectors.chatContextSelectionHasItem(contextSelectionKey),
+    );
     const hasFiles = useFileStore(fileChatSelectors.chatUploadFileListHasItem);
     const [slashMenuRef, expand, showTypoBar, editor, leftActions] = useChatInputStore((s) => [
       s.slashMenuRef,
@@ -146,6 +151,10 @@ const DesktopChatInput = memo<DesktopChatInputProps>(
     ]);
 
     const chatKey = useChatStore(chatSelectors.currentChatKey);
+
+    // The ControlBar (or the custom slot standing in for it) hosts the
+    // context-window token tag; without one, SendArea keeps it beside Send.
+    const hasControlBar = Boolean(controlBarSlot) || showControlBar;
 
     const setExpand = useChatInputStore((s) => s.setExpand);
     const skillDrop = useSkillDrop();
@@ -189,16 +198,23 @@ const DesktopChatInput = memo<DesktopChatInputProps>(
       />
     ) : null;
     const noticeNode = !isConfigLoading && <ChatInputNotice />;
+    // The action bar is `width: 100%`, so a sibling placed *inside* its
+    // shrink-to-fit box is pushed past the bar's right edge and leaves a
+    // one-slot hole between the last action and the expand toggle. Keep the
+    // toggle in a row outside that box.
     const leftSlotContent = (
-      <Flexbox horizontal align={'center'} className={styles.leftActions}>
-        {leftContent ?? (
-          <ActionBar
-            disableCollapse
-            borderRadius={borderRadius}
-            dropdownPlacement={dropdownPlacement}
-            extraActionItems={extraActionItems}
-          />
-        )}
+      <Flexbox horizontal align={'center'} flex={'none'} gap={2}>
+        <Flexbox horizontal align={'center'} className={styles.leftActions}>
+          {leftContent ?? (
+            <ActionBar
+              disableCollapse
+              borderRadius={borderRadius}
+              dropdownPlacement={dropdownPlacement}
+              extraActionItems={extraActionItems}
+            />
+          )}
+        </Flexbox>
+        <ComposerExpandButton />
       </Flexbox>
     );
     const leftSlot = noticeNode ? (
@@ -238,10 +254,10 @@ const DesktopChatInput = memo<DesktopChatInputProps>(
                   (sendAreaPrefix ? (
                     <Flexbox horizontal align={'center'} gap={6}>
                       {sendAreaPrefix}
-                      <SendArea />
+                      <SendArea hideContextWindow={hasControlBar} />
                     </Flexbox>
                   ) : (
-                    <SendArea />
+                    <SendArea hideContextWindow={hasControlBar} />
                   ))
                 }
               />

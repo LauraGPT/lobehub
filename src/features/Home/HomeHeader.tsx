@@ -1,43 +1,33 @@
-import { Flexbox, Text } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
+import { Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles } from 'antd-style';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import HomePromoBanner from '@/business/client/features/HomePromoBanner';
-import { useHomeDailyBrief } from '@/hooks/useHomeDailyBrief';
 import { useUserStore } from '@/store/user';
 import { authSelectors, userProfileSelectors } from '@/store/user/slices/auth/selectors';
 
 import AgentSelect from './AgentSelect';
-import GreetingLine from './GreetingLine';
-import { parseGreetingLine } from './welcomeText';
 
 const styles = createStaticStyles(({ css }) => ({
-  // The dynamic half is generated prose of unpredictable length, and the
-  // composer sits directly below — clamp to two lines so a wordy brief can
-  // never push the input down the page.
+  // The measure comes from the layout (`--home-greeting-measure`), which derives
+  // it from the container width: it has to clear the portrait's bubble, and it
+  // must not depend on the rail, or collapsing would re-wrap the headline and
+  // shove the composer and the whole task list down by a line.
   greeting: css`
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
 
+    max-width: var(--home-greeting-measure, none);
     margin: 0;
 
     font-size: 22px;
     line-height: 1.4;
     letter-spacing: -0.01em;
   `,
-  promo: css`
-    flex: none;
-    min-width: 0;
-
-    @container (width <= 620px) {
-      display: none;
-    }
-  `,
   toolbar: css`
-    container-type: inline-size;
     width: 100%;
     min-width: 0;
     min-height: 48px;
@@ -50,42 +40,35 @@ const getGreetingKey = (hour: number): 'afternoon' | 'evening' | 'morning' => {
   return 'evening';
 };
 
-/** CJK greetings already end on a full-width stop, which carries its own trailing space. */
-const greetingSeparator = (greeting: string) => (/[。！？]$/.test(greeting) ? '' : ' ');
+interface HomeHeaderProps {
+  centered?: boolean;
+}
 
-const HomeHeader = memo(() => {
+const HomeHeader = memo<HomeHeaderProps>(({ centered }) => {
   const { t } = useTranslation('home');
   const displayName = useUserStore(userProfileSelectors.displayUserName);
   const isLogin = useUserStore(authSelectors.isLogin);
-
-  const { currentPair } = useHomeDailyBrief();
 
   const greetingKey = getGreetingKey(new Date().getHours());
   const greeting = isLogin
     ? t(`dashboard.greeting.${greetingKey}`, { name: displayName })
     : t(`dashboard.greeting.${greetingKey}Guest`);
-  // Falls back to the static line until the daily brief lands — or forever, for
-  // an account the generator has not run for yet.
-  const parsed = currentPair?.welcome ? parseGreetingLine(currentPair.welcome) : undefined;
 
   return (
-    <Flexbox gap={16} justify={'center'}>
-      <Flexbox
-        horizontal
-        align={'center'}
-        className={styles.toolbar}
-        gap={16}
-        justify={'space-between'}
-      >
+    // Minimal mode keeps the full layout's stacking order — the switcher names
+    // who speaks, the greeting answers below — but drops the toolbar chrome and
+    // its 48px lane, so the pair reads as one compact block flush with the
+    // composer. The layout's lift math (MINIMAL_LIFT) counts on these heights.
+    <Flexbox gap={centered ? 8 : 16} justify={'center'}>
+      {centered ? (
         <AgentSelect />
-        <div className={styles.promo}>
-          <HomePromoBanner />
-        </div>
-      </Flexbox>
+      ) : (
+        <Flexbox horizontal align={'center'} className={styles.toolbar}>
+          <AgentSelect />
+        </Flexbox>
+      )}
       <Text as={'h1'} className={styles.greeting} weight={600}>
         {greeting}
-        {greetingSeparator(greeting)}
-        {parsed?.plain ? <GreetingLine parsed={parsed} /> : t('dashboard.greeting.subtitle')}
       </Text>
     </Flexbox>
   );

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     agentMap: {} as Record<string, unknown>,
     builtinAgentIdMap: { inbox: 'agt_inbox' } as Record<string, string>,
   },
+  currentUserId: 'member-1',
   homeState: {
     agentGroups: [] as any[],
     pinnedAgents: [] as any[],
@@ -21,10 +22,8 @@ const mocks = vi.hoisted(() => ({
     ungroupedAgents: [] as any[],
   },
   sidebarHiddenAgentIds: [] as string[],
-}));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  sidebarHiddenGroupIds: [] as string[],
+  sidebarVisibilityOverrides: {} as Record<string, boolean>,
 }));
 
 vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
@@ -52,13 +51,27 @@ vi.mock('@/store/home', () => ({
 
 vi.mock('@/store/user', () => ({
   useUserStore: (selector: (state: unknown) => unknown) =>
-    selector({ preference: { sidebarHiddenAgentIds: mocks.sidebarHiddenAgentIds } }),
+    selector({
+      preference: {
+        sidebarHiddenAgentIds: mocks.sidebarHiddenAgentIds,
+        sidebarHiddenGroupIds: mocks.sidebarHiddenGroupIds,
+      },
+      updatePreference: vi.fn(),
+      updateWorkspaceUserPreference: vi.fn(),
+      userId: mocks.currentUserId,
+    }),
 }));
 
 vi.mock('@/store/user/selectors', () => ({
   workspaceUserSettingsSelectors: {
+    // `useKeepSidebarGroupsListed` reaches through to the group-visibility
+    // hook, which now gates writes on the loaded preference workspace.
+    preferenceWorkspaceId: () => mocks.activeWorkspaceId ?? null,
+    sidebarAgentVisibilityOverrides: () => mocks.sidebarVisibilityOverrides,
     sidebarHiddenAgentIds: () => mocks.sidebarHiddenAgentIds,
+    sidebarHiddenGroupIds: () => mocks.sidebarHiddenGroupIds,
   },
+  userProfileSelectors: { userId: (state: { userId: string }) => state.userId },
 }));
 
 vi.mock('@/store/global', () => ({
@@ -73,6 +86,7 @@ const agent = (id: string, title: string, extra: Record<string, unknown> = {}) =
   id,
   title,
   type: 'agent',
+  userId: 'member-1',
   ...extra,
 });
 
@@ -81,7 +95,10 @@ const ids = (rows: { id: string }[]) => rows.map((row) => row.id);
 describe('useHomeAgentRows', () => {
   beforeEach(() => {
     mocks.activeWorkspaceId = undefined;
+    mocks.currentUserId = 'member-1';
     mocks.sidebarHiddenAgentIds = [];
+    mocks.sidebarHiddenGroupIds = [];
+    mocks.sidebarVisibilityOverrides = {};
     mocks.agentState.agentMap = { agt_inbox: { title: 'Lobe AI' } };
     mocks.homeState.agentGroups = [];
     mocks.homeState.pinnedAgents = [];
@@ -125,6 +142,36 @@ describe('useHomeAgentRows', () => {
     expect(ids(result.current.workspaceRows)).toEqual(['agt_inbox', 'agt_a']);
   });
 
+  it("lists another member's Agent by default and hides it after an explicit override", () => {
+    mocks.activeWorkspaceId = 'ws_1';
+    mocks.homeState.ungroupedAgents = [
+      agent('agt_own', 'Own'),
+      agent('agt_shared', 'Shared', { userId: 'member-2' }),
+    ];
+
+    const { rerender, result } = renderHook(() => useHomeAgentRows());
+
+    expect(ids(result.current.workspaceRows)).toEqual(['agt_inbox', 'agt_own', 'agt_shared']);
+
+    mocks.sidebarVisibilityOverrides = { agt_shared: false };
+    rerender();
+
+    expect(ids(result.current.workspaceRows)).toEqual(['agt_inbox', 'agt_own']);
+  });
+
+  it('drops the agents inside a Category the caller hid', () => {
+    mocks.activeWorkspaceId = 'ws_1';
+    mocks.homeState.agentGroups = [
+      { id: 'grp_shown', items: [agent('agt_shown', 'Shown')], name: 'Shown' },
+      { id: 'grp_hidden', items: [agent('agt_in_hidden', 'In hidden')], name: 'Hidden' },
+    ];
+    mocks.sidebarHiddenGroupIds = ['grp_hidden'];
+
+    const { result } = renderHook(() => useHomeAgentRows());
+
+    expect(ids(result.current.workspaceRows)).toEqual(['agt_inbox', 'agt_shown']);
+  });
+
   it('keeps a single flat bucket in personal mode', () => {
     mocks.homeState.ungroupedAgents = [agent('agt_a', 'Shared')];
 
@@ -165,6 +212,23 @@ describe('useHomeAgentRows', () => {
       'agt_plain',
     ]);
     expect(result.current.workspaceRows.find((row) => row.id === 'agt_pinned')?.pinned).toBe(true);
+  });
+
+  it('keeps the agent role as the secondary row title', () => {
+    mocks.homeState.ungroupedAgents = [
+      agent('agt_codex', 'Codex', { name: 'Coco' }),
+      agent('agt_legacy', 'Legacy role'),
+    ];
+
+    const { result } = renderHook(() => useHomeAgentRows());
+
+    expect(result.current.workspaceRows.find((row) => row.id === 'agt_codex')).toMatchObject({
+      subtitle: 'Codex',
+      title: 'Coco',
+    });
+    expect(result.current.workspaceRows.find((row) => row.id === 'agt_legacy')?.subtitle).toBe(
+      undefined,
+    );
   });
 
   it('excludes chat groups so only agent ids reach the home input', () => {

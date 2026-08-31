@@ -98,6 +98,13 @@ export class GlobalWorkspacePaneActionImpl {
     );
   };
 
+  toggleHomeRail = (newValue?: boolean): void => {
+    const currentValue = this.#get().status.showHomeRail ?? true;
+    const showHomeRail = typeof newValue === 'boolean' ? newValue : !currentValue;
+
+    this.#get().updateSystemStatus({ showHomeRail }, n('toggleHomeRail', newValue));
+  };
+
   togglePageAgentPanel = (newValue?: boolean): void => {
     const showPageAgentPanel =
       typeof newValue === 'boolean' ? newValue : !this.#get().status.showPageAgentPanel;
@@ -133,6 +140,14 @@ export class GlobalWorkspacePaneActionImpl {
     this.#get().updateSystemStatus({ showRightPanel }, n('toggleRightPanel', newValue));
   };
 
+  toggleWorkingOverview = (newValue?: boolean): void => {
+    const currentValue =
+      this.#get().status.showWorkingOverview ?? !this.#get().status.showRightPanel;
+    const showWorkingOverview = typeof newValue === 'boolean' ? newValue : !currentValue;
+
+    this.#get().updateSystemStatus({ showWorkingOverview }, n('toggleWorkingOverview', newValue));
+  };
+
   toggleTerminalPanel = (newValue?: boolean): void => {
     const showTerminalPanel =
       typeof newValue === 'boolean' ? newValue : !this.#get().status.showTerminalPanel;
@@ -158,8 +173,25 @@ export class GlobalWorkspacePaneActionImpl {
     );
   };
 
+  openWorkingSidebar = (tab?: WorkingSidebarTab): void => {
+    const previousNonce = this.#get().status.workingSidebarTabRequest?.nonce ?? 0;
+    this.#get().updateSystemStatus(
+      {
+        showRightPanel: true,
+        showWorkingOverview: false,
+        ...(tab
+          ? {
+              workingSidebarTab: tab,
+              workingSidebarTabRequest: { nonce: previousNonce + 1, tab },
+            }
+          : {}),
+      },
+      n('openWorkingSidebar', tab),
+    );
+  };
+
   revealInFilesTab = (relativePath: string): void => {
-    this.#get().setWorkingSidebarTab('files');
+    this.#get().openWorkingSidebar('files');
     this.#get().updateSystemStatus(
       { workingSidebarRevealRequest: { nonce: Date.now(), path: relativePath } },
       n('revealInFilesTab'),
@@ -167,8 +199,7 @@ export class GlobalWorkspacePaneActionImpl {
   };
 
   openInBrowserTab = (url: string): void => {
-    this.#get().toggleRightPanel(true);
-    this.#get().setWorkingSidebarTab('browser');
+    this.#get().openWorkingSidebar('browser');
     this.#get().updateSystemStatus(
       { workingSidebarBrowserRequest: { nonce: Date.now(), url } },
       n('openInBrowserTab'),

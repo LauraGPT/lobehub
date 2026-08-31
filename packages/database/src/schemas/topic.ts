@@ -14,7 +14,7 @@ import { createInsertSchema, createUpdateSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
 import { createNanoId, idGenerator } from '../utils/idGenerator';
-import { amountNumeric, createdAt, timestamps, timestamptz } from './_helpers';
+import { amountNumeric, createdAt, softDeleteColumns, timestamps, timestamptz } from './_helpers';
 import { agents } from './agent';
 import { chatGroups } from './chatGroup';
 import { documents } from './file';
@@ -48,7 +48,6 @@ export const topics = pgTable(
       enum: [
         'active',
         'running',
-        'paused',
         'waitingForHuman',
         'scheduled',
         'failed',
@@ -82,6 +81,8 @@ export const topics = pgTable(
     senderId: text('sender_id'),
 
     workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Recycle bin — see `schemas/trash.ts`. */
+    ...softDeleteColumns(),
     ...timestamps,
   },
   (t) => [
@@ -156,6 +157,8 @@ export const threads = pgTable(
 
     lastActiveAt: timestamptz('last_active_at').defaultNow(),
     workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Recycle bin — see `schemas/trash.ts`. */
+    ...softDeleteColumns(),
     ...timestamps,
   },
   (t) => [

@@ -26,15 +26,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('@/utils/logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-  }),
-}));
-
 // Import AFTER the mocks so the singleton logger and electron stub are wired.
 const { BinaryManager, defineCommandBinary } = await import('../BinaryManager');
 
@@ -139,6 +130,40 @@ describe('BinaryManager', () => {
       expect(status.manageable).toBe(true);
       // Managed cache shortcut means we never bothered the spec's detect().
       expect(detect).not.toHaveBeenCalled();
+    });
+
+    it('re-probes an unavailable binary once the cached verdict ages out', async () => {
+      // A negative is often transient — the CLI printed an upgrade banner that
+      // failed validation, or it simply wasn't installed yet. Caching it for
+      // the whole session pins the UI to "not installed" with no way back.
+      vi.useFakeTimers();
+
+      try {
+        const mgr = new BinaryManager(stubApp);
+        const detect = vi
+          .fn<() => Promise<BinaryStatus>>()
+          .mockResolvedValueOnce({ available: false })
+          .mockResolvedValue({ available: true, path: '/usr/local/bin/foo', version: '1.0' });
+        mgr.register({ detect, name: 'foo' }, 'content-search');
+
+        expect((await mgr.detect('foo')).available).toBe(false);
+        // Repeated scans within the window reuse the verdict.
+        expect((await mgr.detect('foo')).available).toBe(false);
+        expect(detect).toHaveBeenCalledTimes(1);
+
+        vi.advanceTimersByTime(60_001);
+        const recovered = await mgr.detect('foo');
+
+        expect(recovered.available).toBe(true);
+        expect(detect).toHaveBeenCalledTimes(2);
+
+        // A positive verdict stays cached for the session.
+        vi.advanceTimersByTime(60_001);
+        await mgr.detect('foo');
+        expect(detect).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('marks unavailable + manageable when neither managed cache nor PATH has the binary', async () => {
